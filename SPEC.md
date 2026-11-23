@@ -1580,9 +1580,10 @@ and bridge processes using that board directory. Queue fallbacks use the same
 door. Failed admission does not enqueue or report acceptance. Contention timeout
 is logged at Debug, skips fallback execution and leaves the engine to retry.
 Real lock errors retain their warning and ordinary fallback qualification. Older running
-writers do not participate until upgraded. If the usual one-second observation
-is unknown and a receipt could defer the wake, the canonical route makes one
-read-only corroboration with a two-second budget. It checks the queue and can
+writers do not participate until upgraded. When the one-second observation
+times out, the canonical route makes one read-only corroboration with a
+two-second budget. An unknown result also gets that corroboration when a
+recent receipt could defer the wake. It checks the queue and can
 read the last turn start for the exact thread. An observed pending notice wins.
 An observed empty queue, a turn started at or after the receipt time, a current
 prompt, a new reconnect generation, or ten seconds of receipt age allows a new

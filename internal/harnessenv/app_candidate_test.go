@@ -13,7 +13,7 @@ import (
 	"github.com/agenxy/dibs/internal/procinfo"
 )
 
-func TestAppEpochSelectsDesktopProcessesBeforeReadingPaths(t *testing.T) {
+func TestAppOwnershipAndEpochSelectCandidatesBeforeReadingPaths(t *testing.T) {
 	rows, err := procinfo.Snapshot(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -59,14 +59,25 @@ func TestAppEpochSelectsDesktopProcessesBeforeReadingPaths(t *testing.T) {
 			reads, fallbacks := 0, 0
 			nativeProcessPath = func(int) (string, error) { reads++; return "", os.ErrPermission }
 			processPathFallback = func(context.Context, int) (string, error) { fallbacks++; return "", os.ErrPermission }
-			epoch, known := ChatGPTAppEpoch()
+			ownership := ChatGPTOwnership("app-candidate-fixture")
 			if tc.desktop {
-				if known || epoch != "" || reads != 1 || fallbacks != 1 {
-					t.Fatalf("denied desktop path lost unknown evidence: epoch=%q known=%v reads=%d fallbacks=%d",
+				if ownership.Known || ownership.Epoch != "" || reads != 1 || fallbacks != 1 {
+					t.Fatalf("denied desktop path lost unknown evidence: %+v reads=%d fallbacks=%d",
+						ownership, reads, fallbacks)
+				}
+			} else if !ownership.Known || ownership.Epoch != "absent" || reads != 0 || fallbacks != 0 {
+				t.Fatalf("unrelated process triggered desktop path observation: %+v reads=%d fallbacks=%d",
+					ownership, reads, fallbacks)
+			}
+			reads, fallbacks = 0, 0
+			epoch, known := ChatGPTAppEpoch()
+			if tc.name == "ChatGPT" {
+				if known || epoch != "" || reads != 1 || fallbacks != 0 {
+					t.Errorf("denied main executable should stay unknown without a command: %q %t reads=%d fallbacks=%d",
 						epoch, known, reads, fallbacks)
 				}
 			} else if !known || epoch != "absent" || reads != 0 || fallbacks != 0 {
-				t.Fatalf("unrelated process triggered desktop path observation: epoch=%q known=%v reads=%d fallbacks=%d",
+				t.Errorf("unrelated or helper process affected the restart poll: %q %t reads=%d fallbacks=%d",
 					epoch, known, reads, fallbacks)
 			}
 		})
@@ -107,7 +118,7 @@ func TestAppEpochReadsReadableHelperOnlyRemnantsAsAbsent(t *testing.T) {
 				fallbacks++
 				return "", os.ErrPermission
 			}
-			if epoch, known := ChatGPTAppEpoch(); !known || epoch != "absent" || reads != 1 || fallbacks != 0 {
+			if epoch, known := ChatGPTAppEpoch(); !known || epoch != "absent" || reads != 0 || fallbacks != 0 {
 				t.Fatalf("helper became an app incarnation or unknown: epoch=%q known=%v reads=%d fallbacks=%d",
 					epoch, known, reads, fallbacks)
 			}

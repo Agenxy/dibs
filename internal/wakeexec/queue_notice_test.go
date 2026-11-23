@@ -142,9 +142,21 @@ func TestNativeQueueRecognizesDatedPendingItemsThroughCommandDoor(t *testing.T) 
 			if rows := staleQueueRows(t, home); len(rows) != 1 || rows[0].Input[0].Text != text {
 				t.Fatal("setup: historical dated item was not retained")
 			}
+			stall := filepath.Join(home, "stalled-list")
+			if kind == "adopted" {
+				// The historical item has no receipt in this Dibs directory.
+				// A delayed first queue read must give it the same bounded
+				// corroboration as a delayed read of a locally admitted item.
+				t.Setenv("DIBS_TEST_QUEUE_STALL_LIST_ONCE", stall)
+			}
 			argv := []string{binary, "queue", "--thread", "stale-thread", "--message", Compose("handoff")}
 			if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
 				t.Fatal("setup: new writer's command route failed")
+			}
+			if kind == "adopted" {
+				if _, err := os.Stat(stall); err != nil {
+					t.Fatalf("setup: queue probe did not reach the stalled read: %v", err)
+				}
 			}
 			rows := staleQueueRows(t, home)
 			if len(rows) != 1 || rows[0].Input[0].Text != text {

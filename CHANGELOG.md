@@ -37,6 +37,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - The board labels old pending Codex queue observations as stale and keeps
   the original observation time.
+- The idle ChatGPT restart poll checks native main-process evidence without
+  launching a command for unreadable or unrelated helpers.
+- A timed-out Codex queue read gets one bounded second look even when Dibs
+  has no local receipt for an existing notice.
 - Restarting the daemon preserves confirmed posting evidence for human
   questions and requests and retries still-open, unconfirmed asks through
   the existing notification route. Human mail reports unknown posting
