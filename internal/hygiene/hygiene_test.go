@@ -733,9 +733,8 @@ func TestNoDocumentReadsLikeARenameRanOverIt(t *testing.T) {
 // while the project shipped 0.0.5, invisible to every check, because it had
 // never been anybody's to remember.
 //
-// So the list is not trusted. This goes looking for the thing it describes: any
-// JSON in the tree with a top-level "version" is a file that states a release
-// number, and either it is stamped or it is deliberately not ours.
+// Recognize plugin manifests by their paths even when their version is absent.
+// Other JSON that declares a top-level version must be stamped or exempted.
 func TestNoVersionedManifestEscapesTheStamp(t *testing.T) {
 	root := repoRoot(t)
 	stamped := map[string]bool{}
@@ -751,6 +750,13 @@ func TestNoVersionedManifestEscapesTheStamp(t *testing.T) {
 	walk(t, root, func(rel, abs string) {
 		if filepath.Ext(rel) != ".json" || stamped[rel] {
 			return
+		}
+		if strings.HasPrefix(rel, "plugins/") || strings.HasPrefix(rel, "internal/plugins/data/") {
+			switch filepath.Base(rel) {
+			case "plugin.json", "gemini-extension.json", "manifest.json":
+				t.Errorf("%s is a plugin manifest missing from release.Manifests", rel)
+				return
+			}
 		}
 		if why, ok := exempt[filepath.Base(rel)]; ok {
 			t.Logf("%s: exempt (%s)", rel, why)
