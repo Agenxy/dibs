@@ -25,7 +25,10 @@ func (e *Engine) setHumanPresentation(serial uint64, p notify.Presentation, post
 	if e.humanDelivery.bySerial == nil {
 		e.humanDelivery.bySerial = map[uint64]humanDelivery{}
 	}
-	d := e.humanDelivery.bySerial[serial]
+	d, known := e.humanDelivery.bySerial[serial]
+	if !known && !posting {
+		return unknownHumanPosting()
+	}
 	// A later send-response snapshot must not replace posting-time evidence.
 	if posting || !d.Posted {
 		d.Presentation = p
@@ -51,6 +54,10 @@ func (e *Engine) humanSendPresentation(res core.Result, approval bool) {
 	}
 	d := e.setHumanPresentation(serial, e.humanPresentation(), false)
 	res["human_delivery"] = d
+	if d.Hint != "" {
+		res["notify_hint"] = d.Hint + " Read the pending ask on the Dibs board."
+		return
+	}
 	res["notify_hint"] = "The notification is pending until the notifier confirms posting. " +
 		"The request stays pending; do not assume it was seen. Check read_mail for receipts."
 	if d.Posted {

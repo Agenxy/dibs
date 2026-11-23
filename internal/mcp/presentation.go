@@ -38,7 +38,7 @@ func (s *Server) presentNames(ctx context.Context, res core.Result) {
 	if !one && !many && !inbox && !events {
 		return
 	}
-	names, err := s.eng.AgentNames(ctx)
+	names, human, err := s.eng.AgentNamesAndHuman(ctx)
 	if err != nil {
 		return // A closing engine does not turn a successful read into an error.
 	}
@@ -51,7 +51,7 @@ func (s *Server) presentNames(ctx context.Context, res core.Result) {
 	wrap := func(m *core.Message) messagePresentation {
 		view := messagePresentation{
 			Message: m, FromName: name(m.From), ToName: name(m.To),
-			UndeliveredForSeconds: engine.UndeliveredForSeconds(m, time.Now()),
+			UndeliveredForSeconds: engine.UndeliveredForSeconds(m, time.Now(), human),
 		}
 		if m.Adopt != "" {
 			view.AdoptName = name(m.Adopt)

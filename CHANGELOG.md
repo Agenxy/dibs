@@ -31,6 +31,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Restarting the daemon preserves confirmed posting evidence for human
+  questions and requests and retries still-open, unconfirmed asks through
+  the existing notification route. Human mail reports unknown posting
+  status when evidence is absent.
 - Slow Git commands keep their own deadlines within a bounded repository
   lookup. A timed-out lookup can recover missing identity on the next call.
 - After a Codex queue probe times out, a prior admission receipt allows one

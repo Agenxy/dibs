@@ -151,8 +151,9 @@ func (e *Engine) reconsiderAcceptedContacts(now time.Time) {
 
 // UndeliveredForSeconds is a projection, never a field in the message or its
 // ledger. Recipient awareness removes it without changing response deadlines.
-func UndeliveredForSeconds(m *core.Message, now time.Time) *int64 {
-	if !unreadContactAsk(m) || m.DeliveredAt != 0 || m.SentAt.IsZero() {
+// Human mail has a separate OS posting projection.
+func UndeliveredForSeconds(m *core.Message, now time.Time, human string) *int64 {
+	if !unreadContactAsk(m) || m.To == human || m.DeliveredAt != 0 || m.SentAt.IsZero() {
 		return nil
 	}
 	age := max(int64(0), int64(now.Sub(m.SentAt)/time.Second))

@@ -36,6 +36,29 @@ func MessageID(node string, serial uint64) (string, error) {
 	return "dibs.msg." + node + "." + strconv.FormatUint(serial, 10), nil
 }
 
+// MessageDelivered checks whether the same keyed notice is already present in
+// Notification Center. The helper's query never requests authorization.
+func MessageDelivered(ctx context.Context, node string, serial uint64) bool {
+	if goos != "darwin" || silenced() || underTest() {
+		return false
+	}
+	id, err := MessageID(node, serial)
+	if err != nil {
+		return false
+	}
+	h := helper()
+	if h == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	out, err := procexec.Command(ctx, h, "--message-delivered="+id).Output() // #nosec G204 -- bundled helper; validated ID
+	var reply struct {
+		Present bool `json:"present"`
+	}
+	return err == nil && json.Unmarshal(out, &reply) == nil && reply.Present
+}
+
 // RemoveMessages asks this Mac to remove exactly these board-scoped messages.
 // Its structured reply distinguishes new helpers from old ones that ignore flags.
 func RemoveMessages(node string, serials []uint64) Cleanup {

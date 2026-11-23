@@ -28,10 +28,15 @@ type humanDelivery struct {
 	Posted     bool                    `json:"posted"`
 	Route      string                  `json:"route"`
 	State      string                  `json:"state"`
+	Hint       string                  `json:"hint,omitempty"`
 	RelayCount int                     `json:"relay_count,omitempty"`
 	Error      string                  `json:"error,omitempty"`
 	Receipts   map[string]humanReceipt `json:"receipts,omitempty"`
 	Cleanup    *notify.Cleanup         `json:"notification_cleanup,omitempty"`
+}
+
+func unknownHumanPosting() humanDelivery {
+	return humanDelivery{Route: "unknown", State: "unknown", Hint: "Notification posting is not known since restart."}
 }
 
 type humanReceipt struct {
@@ -57,6 +62,7 @@ type humanDeliveries struct {
 	notifier      HumanNotifier
 	nativeProfile string // routing metadata, never an answer capability
 	bySerial      map[uint64]humanDelivery
+	posting       *humanPostingStore
 	contactIssued map[uint64]bool // a contact alert actually left the settle timer
 	cleanup       chan NotificationCleanup
 }
@@ -170,9 +176,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 		Deadline:            n.Deadline,
 		NotificationProfile: profile,
 		Receipt: func(state string) {
-			if state == "posted" {
-				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
-			}
+			e.acceptDesktopPosting(n, state)
 			e.recordDesktopDelivery(n.Serial, state, "")
 			if state == "posted" && n.Contact != nil {
 				e.noteContactPosted(n.Serial)
@@ -182,9 +186,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 			}
 		},
 		DeliveryReceipt: func(data notify.ReceiptData) {
-			if data.State == "posted" {
-				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
-			}
+			e.acceptDesktopPosting(n, data.State)
 			e.recordHumanReceipt(n.Serial, "desktop", data, "")
 			if data.State == "posted" && n.Contact != nil {
 				e.noteContactPosted(n.Serial)
@@ -210,6 +212,16 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 			e.report(err)
 		}
 	}
+}
+
+func (e *Engine) acceptDesktopPosting(n HumanNotice, state string) {
+	if state != "posted" {
+		return
+	}
+	if humanAskType(n.Type) {
+		e.saveHumanPosting(n.Serial, "desktop")
+	}
+	e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
 }
 
 func (e *Engine) recordDesktopDelivery(serial uint64, state, failure string) {
@@ -339,6 +351,7 @@ func (e *Engine) ReportHumanReceipt(
 		return err
 	}
 	var invalid error
+	var askPosted bool
 	_, err := e.query(ctx, func() core.Result {
 		if e.state.Contacts[serial] != nil {
 			invalid = e.recordContactReceipt(serial, source, data, failure)
@@ -353,6 +366,7 @@ func (e *Engine) ReportHumanReceipt(
 			invalid = fmt.Errorf("notification receipt source limit reached (64)")
 			return nil
 		}
+		askPosted = state == "posted" && humanAskType(m.Type)
 		if state == "posted" && humanDecision(m) {
 			e.requestHumanCleanup([]uint64{serial})
 		}
@@ -360,6 +374,9 @@ func (e *Engine) ReportHumanReceipt(
 	})
 	if err != nil {
 		return err
+	}
+	if askPosted {
+		e.saveHumanPosting(serial, "relay")
 	}
 	if invalid == nil && state == "failed" {
 		go e.report(fmt.Errorf("human relay notification failed: %s", failure))
@@ -419,12 +436,13 @@ func (e *Engine) deliveryForHuman(m *core.Message) humanDelivery {
 	}
 	e.humanDelivery.mu.Unlock()
 	if !ok {
-		d = humanDelivery{Route: "unknown", State: "unknown"}
+		d = unknownHumanPosting()
 	}
 	// The answer is replayable evidence, unlike notification receipts.
 	if m.RespondedAt != 0 {
 		d.State = m.State
 		d.Error = ""
+		d.Hint = ""
 	}
 	return d
 }
