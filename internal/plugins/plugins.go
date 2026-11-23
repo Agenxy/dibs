@@ -212,36 +212,18 @@ var catalog = []struct {
 		harness: "gemini-cli",
 		dir:     "gemini-cli",
 		aliases: []string{"gemini", "gemini_cli", "geminicli"},
-		buys: "mail at SESSION START, and pull-only after that. Gemini's hooks are " +
-			"subprocesses, and its SessionStart accepts additionalContext, so " +
-			"`dibs hook-poll` puts what is waiting for your agent into the first " +
-			"turn's context. Its end-of-turn hook cannot add context: it can only " +
-			"reject your answer or stop the session, and Dibs will not deliver mail " +
-			"by discarding what you said. So past session start the rhythm is " +
-			"yours: check_in at the start of each activation, await_events before " +
-			"blocking, and the `waiting` line on every result names what arrived.",
-		root: "~/.gemini",
+		buys: "the Dibs MCP server and coordination skill in one Gemini CLI extension. " +
+			"The SessionStart hook checks for mail when a session opens. " +
+			"Mail is pull-only during the session.",
+		install: "gemini extensions install ./dibs-gemini-extension",
+		root:    "./dibs-gemini-extension",
 		setup: []Step{
 			{
-				Do: "Add the Dibs MCP server to ~/.gemini/settings.json under " +
-					"`mcpServers` (`dibs mcp-config` prints the block: command " +
-					"`dibs`, args [\"mcp-stdio\"]).",
-				Check: "`mcpServers.dibs` exists in the settings Gemini actually loads, " +
-					"and a session lists the dibs tools",
-				IfNot: "nothing else here does anything; the hook asks the daemon " +
-					"about an agent this session never registered",
-			},
-			{
-				Do: "Merge hooks.json into the same settings.json under `hooks`: a " +
-					"SessionStart command hook running `dibs hook-poll`. `dibs` must " +
-					"be on PATH, or name its absolute path in `command`.",
-				Check: "resuming a session in which your agent has checked in " +
-					"(`gemini --resume`, the same session id) makes the daemon log the " +
-					"hook resolving (`dibs log`)",
-				IfNot: "the session id the hook quotes is not bound to your agent: a " +
-					"NEW session has a new id, which your first check_in in it binds, " +
-					"so that session's digest comes on the `waiting` line of that call " +
-					"rather than at its start; resume the session and it opens bound",
+				Do: "Write the files under ./dibs-gemini-extension. Ask your operator " +
+					"to put dibs on PATH and run gemini extensions install ./dibs-gemini-extension.",
+				Check:  "gemini extensions list shows dibs and a new session's /mcp list shows its tools.",
+				IfNot:  "Check PATH and confirm the extension is enabled for this workspace.",
+				Manual: true,
 			},
 			{
 				Do: "Keep the pull rhythm: check_in at the start of each activation, " +

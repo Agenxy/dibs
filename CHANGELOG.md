@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- A Gemini CLI extension installs the Dibs MCP server, coordination skill, and
+  session-start mail hook through the native extension manager.
 - A native Antigravity plugin installs the Dibs MCP server and coordination
   skill with `dibs antigravity-plugin install`. An existing manual Dibs entry
   moves into the plugin with its server settings.
