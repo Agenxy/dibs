@@ -38,12 +38,13 @@ the question.
 | [claude-code](claude-code/) | plugin + MCP | ✅ `mcp_tool` hook → `hook_poll` → `additionalContext` | yes |
 | [opencode](opencode/) | MCP config | ✅ plugin, `chat.message` synthetic part | **yes**: real models, full mail loop |
 | [pi](pi/) | **extension** (no MCP client) | ✅ `before_agent_start` injected message | **yes**, agent quoted the mail unprompted |
-| [hermes](hermes/) | MCP via `hermes mcp add` | ❌ no hook system found | **yes**, every tool enumerated, real model |
+| [hermes](hermes/) | Agent Plugins v1 bundle with MCP and skill | Pull-only | Skill loaded, MCP board call passed |
 | [claude-desktop](claude-desktop/) | MCP (stdio) or `.mcpb` | ❌ no hook system exists | tools yes; panel renders in the ext-apps reference host |
 | [codex](codex/) | **plugin** (marketplace in this checkout) or MCP over **stdio** | ✅ `mcp_tool` hooks, once trusted: `dibs codex-hooks --trust` (Codex ≥0.153 drops untrusted hooks silently; measured 2026-09-19) | **yes**: the only harness on MCP 2026-07-28 end to end |
 | [antigravity](antigravity/) | MCP over stdio | Native send-message to an enrolled macOS desktop conversation | **yes**, Antigravity 2.34.0, 2026-11-21 |
+| [gemini-cli](gemini-cli/) | Extension with MCP and skill | Session start hook, then pull-only | Extension installation and discovery verified |
 | [chatgpt-desktop](chatgpt-desktop/) | shares Codex config | ❌ inherits Codex | no |
-| openclaw | not yet assessed | not yet assessed | deferred |
+| [openclaw](openclaw/) | Agent Plugins v1 bundle with MCP and skill | Pull-only | Checked against source |
 
 ## Transport: why these differ, and why that is not an inconsistency
 

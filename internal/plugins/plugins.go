@@ -212,36 +212,18 @@ var catalog = []struct {
 		harness: "gemini-cli",
 		dir:     "gemini-cli",
 		aliases: []string{"gemini", "gemini_cli", "geminicli"},
-		buys: "mail at SESSION START, and pull-only after that. Gemini's hooks are " +
-			"subprocesses, and its SessionStart accepts additionalContext, so " +
-			"`dibs hook-poll` puts what is waiting for your agent into the first " +
-			"turn's context. Its end-of-turn hook cannot add context: it can only " +
-			"reject your answer or stop the session, and Dibs will not deliver mail " +
-			"by discarding what you said. So past session start the rhythm is " +
-			"yours: check_in at the start of each activation, await_events before " +
-			"blocking, and the `waiting` line on every result names what arrived.",
-		root: "~/.gemini",
+		buys: "the Dibs MCP server and coordination skill in one Gemini CLI extension. " +
+			"The SessionStart hook checks for mail when a session opens. " +
+			"Mail is pull-only during the session.",
+		install: "gemini extensions install ./dibs-gemini-extension",
+		root:    "./dibs-gemini-extension",
 		setup: []Step{
 			{
-				Do: "Add the Dibs MCP server to ~/.gemini/settings.json under " +
-					"`mcpServers` (`dibs mcp-config` prints the block: command " +
-					"`dibs`, args [\"mcp-stdio\"]).",
-				Check: "`mcpServers.dibs` exists in the settings Gemini actually loads, " +
-					"and a session lists the dibs tools",
-				IfNot: "nothing else here does anything; the hook asks the daemon " +
-					"about an agent this session never registered",
-			},
-			{
-				Do: "Merge hooks.json into the same settings.json under `hooks`: a " +
-					"SessionStart command hook running `dibs hook-poll`. `dibs` must " +
-					"be on PATH, or name its absolute path in `command`.",
-				Check: "resuming a session in which your agent has checked in " +
-					"(`gemini --resume`, the same session id) makes the daemon log the " +
-					"hook resolving (`dibs log`)",
-				IfNot: "the session id the hook quotes is not bound to your agent: a " +
-					"NEW session has a new id, which your first check_in in it binds, " +
-					"so that session's digest comes on the `waiting` line of that call " +
-					"rather than at its start; resume the session and it opens bound",
+				Do: "Write the files under ./dibs-gemini-extension. Ask your operator " +
+					"to put dibs on PATH and run gemini extensions install ./dibs-gemini-extension.",
+				Check:  "gemini extensions list shows dibs and a new session's /mcp list shows its tools.",
+				IfNot:  "Check PATH and confirm the extension is enabled for this workspace.",
+				Manual: true,
 			},
 			{
 				Do: "Keep the pull rhythm: check_in at the start of each activation, " +
@@ -260,6 +242,44 @@ var catalog = []struct {
 			"guessed at); your first check_in binds it and carries the digest on " +
 			"its `waiting` line. Mid-session, nothing arrives unbidden on this " +
 			"harness; the `waiting` line on your next call is where it shows.",
+	},
+	{
+		harness: "hermes",
+		dir:     "hermes",
+		aliases: []string{"hermes-agent"},
+		buys:    "the Dibs MCP server and coordination skill in a Hermes plugin. Mail is pull-only.",
+		root:    "~/.hermes/plugins/dibs",
+		setup: []Step{
+			{
+				Do: "Write the files under plugins/dibs in the active Hermes profile. " +
+					"Ask your operator to put dibs on PATH and run hermes plugins enable dibs.",
+				Check:  "hermes plugins list shows dibs enabled and hermes plugins doctor dibs --ci succeeds.",
+				IfNot:  "Check that this Hermes build supports Agent Plugins v1 and that you used the active profile.",
+				Manual: true,
+			},
+		},
+		verify: "start a new Hermes session, find the coordination skill with skills_list, " +
+			"register with Dibs and call the namespaced board tool with the returned token. " +
+			"If tools are missing, check PATH and the Hermes MCP SDK.",
+	},
+	{
+		harness: "openclaw",
+		dir:     "openclaw",
+		buys:    "the Dibs MCP server and coordination skill in an OpenClaw bundle. Mail is pull-only.",
+		install: "openclaw plugins install ./dibs-openclaw-plugin",
+		root:    "./dibs-openclaw-plugin",
+		setup: []Step{
+			{
+				Do: "Write the files under ./dibs-openclaw-plugin. Ask your operator to put dibs on " +
+					"the Gateway's PATH and run openclaw plugins install ./dibs-openclaw-plugin.",
+				Check:  "openclaw plugins inspect dibs lists an enabled Agent Plugins bundle.",
+				IfNot:  "Check that this OpenClaw build supports Agent Plugins v1 and review your plugin policy.",
+				Manual: true,
+			},
+		},
+		verify: "in a new embedded agent session with bundle MCP enabled, find the coordination skill, " +
+			"register with Dibs and call dibs__board with the returned token. " +
+			"The layout was checked against source. Runtime behaviour is unmeasured.",
 	},
 	{
 		harness: "codex",

@@ -1,52 +1,23 @@
 # Dibs for Gemini CLI
 
-Gemini CLI reaches Dibs through `dibs mcp-stdio`, one bridge process per
-session, and hears about mail at **session start** through a hook. Past that it
-is pull-only, and the reason is Gemini's, not ours: see below.
+The extension installs the Dibs stdio MCP server, the coordination skill, and a
+session-start mail hook. Mail is pull-only during the session.
 
-## Two pieces
+## Install
 
-**1. The MCP server**, tools. In `~/.gemini/settings.json` (or a project's
-`.gemini/settings.json`):
+Put `dibs` on the PATH that Gemini CLI uses. From a Dibs checkout, run:
 
-```json
-{
-  "mcpServers": {
-    "dibs": { "command": "/absolute/path/to/dibs", "args": ["mcp-stdio"] }
-  }
-}
+```text
+gemini extensions install ./plugins/gemini-cli
 ```
 
-`dibs mcp-config` prints this block with the real path filled in; it is the
-same JSON shape Claude Code reads.
+Review the server and hook in Gemini's consent prompt. If you previously set up
+Dibs by hand, remove the old `mcpServers.dibs` and Dibs SessionStart hook from
+your Gemini settings to avoid loading duplicates. Keep the unrelated entries.
 
-**2. The hook**, delivery at session start. Merge [hooks.json](hooks.json) into
-the same `settings.json`, under `hooks`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "name": "dibs", "command": "dibs hook-poll", "timeout": 10000 } ] }
-    ]
-  }
-}
-```
-
-`dibs hook-poll` reads the hook's JSON on stdin, asks the daemon what is
-waiting for this session's agent, and prints the answer in the shape Gemini's
-hook schema accepts: `hookSpecificOutput.additionalContext`, which Gemini
-injects as the first turn's context (non-interactive: prepended to the
-prompt), and `systemMessage` for the person. It prints `{}` and exits 0 when
-there is nothing, and when the input is not a session start, because a
-boundary the harness cannot deliver at is not a failure. A daemon that did not
-answer, or input that is not the hook's JSON, is one: nothing on stdout, the
-reason on stderr, exit 1, which Gemini shows as a warning and carries on. The
-person learns the wake path is dead on the launch where it died.
-
-Gemini's `hooks` are `command` type only, so the hook is a subprocess: the
-`dibs` binary itself, which is why it must be on `PATH` (or name the absolute
-path in `command`).
+`gemini extensions list` should show `dibs`. In a new Gemini session, use
+`/mcp list` to check for the Dibs tools and `/skills list` for the coordination
+skill. Gemini owns server and tool approval.
 
 ## Why session start only
 
