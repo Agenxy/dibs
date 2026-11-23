@@ -205,28 +205,31 @@ func main() {
 	if len(os.Args) != 4 || os.Args[1] != "app-server" || os.Args[2] != "--listen" || os.Args[3] != "stdio://" {
 		os.Exit(2)
 	}
-	if os.Getenv("DIBS_TEST_QUEUE_PIPE_CASE") != "" {
-		f, err := os.OpenFile(filepath.Join(os.Getenv("CODEX_HOME"), "probe-processes"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		if err != nil {
+	pipePhase := ""
+	if mode := os.Getenv("DIBS_TEST_QUEUE_PIPE_CASE"); mode != "" {
+		pipePhase = "admission"
+		if _, err := os.Stat(path); err == nil {
+			pipePhase = "receipt"
+			holdFirstReceiptProbe()
+		} else if !os.IsNotExist(err) {
 			panic(err)
 		}
-		if _, err := f.WriteString("probe\n"); err != nil {
-			panic(err)
-		}
-		if err := f.Close(); err != nil {
-			panic(err)
-		}
-		if os.Getenv("DIBS_TEST_QUEUE_PIPE_CASE") == "observation-error" {
-			if _, err := os.Stat(path); err == nil {
-				os.Exit(5)
-			}
+		notePipeProbe("probe-processes", pipePhase)
+		if pipePhase == "receipt" && mode == "observation-error" {
+			notePipeProbe("probe-readiness", pipePhase)
+			os.Exit(5)
 		}
 	}
 	if os.Getenv("DIBS_QUEUE_PROBE_FAIL") == "1" {
 		os.Exit(5)
 	}
 	if os.Getenv("DIBS_QUEUE_PROBE_STALL") == "1" {
-		if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "probe.pid"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		// A timeout during the write must not publish a partial PID.
+		pid := filepath.Join(os.Getenv("CODEX_HOME"), "probe.pid")
+		if err := os.WriteFile(pid+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			panic(err)
+		}
+		if err := os.Rename(pid+".tmp", pid); err != nil {
 			panic(err)
 		}
 		time.Sleep(time.Hour)
@@ -328,10 +331,54 @@ func main() {
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}
+		if req.Method == "thread/queue/list" {
+			if pipePhase != "" {
+				notePipeProbe("probe-readiness", pipePhase)
+			}
+			if marker := os.Getenv("DIBS_TEST_QUEUE_STALL_LIST_ONCE"); marker != "" {
+				if err := os.WriteFile(marker+".reply-ready", nil, 0o600); err != nil {
+					panic(err)
+				}
+			}
+		}
 		if err := enc.Encode(map[string]any{"id": req.ID, "result": result}); err != nil {
 			panic(err)
 		}
 	}
+}
+
+func notePipeProbe(file, phase string) {
+	path := filepath.Join(os.Getenv("CODEX_HOME"), file)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := f.WriteString(phase + "\n"); err != nil {
+		panic(err)
+	}
+	if err := f.Close(); err != nil {
+		panic(err)
+	}
+}
+
+// Delay one post-command probe before it can report readiness. The initial
+// admission probe ran before the fixture committed its queue file.
+func holdFirstReceiptProbe() {
+	marker := os.Getenv("DIBS_TEST_QUEUE_COLD_RECEIPT")
+	if marker == "" {
+		return
+	}
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if os.IsExist(err) {
+		return
+	}
+	if err != nil {
+		panic(err)
+	}
+	if err := f.Close(); err != nil {
+		panic(err)
+	}
+	<-time.After(time.Hour)
 }
 
 // Only the retained-pipe test enables this control protocol. Each process
