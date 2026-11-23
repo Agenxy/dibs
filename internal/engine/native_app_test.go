@@ -19,7 +19,12 @@ import (
 
 func nativeAppEngine(t *testing.T) (*Engine, context.Context, string, string) {
 	t.Helper()
-	e := New(core.NewState("native-app", core.DefaultLimits()), &memLedger{}, deadProber{})
+	return nativeAppEngineWithLedger(t, &memLedger{})
+}
+
+func nativeAppEngineWithLedger(t *testing.T, ledger Ledger) (*Engine, context.Context, string, string) {
+	t.Helper()
+	e := New(core.NewState("native-app", core.DefaultLimits()), ledger, deadProber{})
 	// There is deliberately no executable at this canonical queue path. Native
 	// success must never reach a queue command, observer, receipt lock or opener.
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
