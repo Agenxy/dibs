@@ -45,6 +45,7 @@ func TestBridgeMemoryBudget(t *testing.T) {
 		t.Fatalf("setup: build production CLI: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(bin, "--help"))
+	t.Parallel()
 	for _, upgraded := range []bool{false, true} {
 		name := "fresh"
 		if upgraded {

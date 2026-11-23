@@ -38,6 +38,7 @@ func TestCommandCatalogContainsEveryDispatchAlias(t *testing.T) {
 // Enter through main, not an individual handler: help has previously been
 // correct below the dispatch while the dispatch performed the action instead.
 func TestEveryDispatchedVerbAnswersHelpWithoutAuthority(t *testing.T) {
+	t.Parallel()
 	var requests atomic.Int32
 	board := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)

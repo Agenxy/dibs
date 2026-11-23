@@ -73,6 +73,7 @@ func TestReconnectReceiptSurvivesOneInventoryTimeout(t *testing.T) {
 		t.Fatalf("setup: build observed bridge/daemon: %v\n%s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--dibs-test-prepare"))
+	t.Parallel()
 	receipt := filepath.Join(dir, "inventory-timeout-receipt")
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
