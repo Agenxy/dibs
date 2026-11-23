@@ -956,16 +956,20 @@ func boardRows(agents []any) string {
 		if status == "active" {
 			status = "registered"
 		}
-		turn := "turn unknown"
-		switch m["turn"] {
-		case "in_turn":
-			turn = "in turn"
-		case "between_turns":
-			turn = "between turns"
-		}
-		fmt.Fprintf(&b, "  %-28s %-10s  %-13s  %s\n", who, status, turn, what)
+		fmt.Fprintf(&b, "  %-28s %-10s  %-13s  %s\n", who, status, boardRowTurn(m), what)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// boardRowTurn labels observed turn evidence. Unknown means no evidence.
+func boardRowTurn(row map[string]any) string {
+	switch row["turn"] {
+	case "in_turn":
+		return "in turn"
+	case "between_turns":
+		return "between turns"
+	}
+	return "turn unknown"
 }
 
 func boardRowName(row map[string]any, id string) string {
