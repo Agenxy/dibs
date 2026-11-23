@@ -92,7 +92,8 @@ type Engine struct {
 	// ANY kind, including the finishing ones. The daemon's own evidence that a
 	// session is there, as against anything the agent chose to tell it. See
 	// liveness.go, which explains why this is separate from `seen`.
-	hookAlive map[string]time.Time
+	hookAlive      map[string]time.Time
+	hookBoardTurns map[string]hookBoardTurn
 	// turnEnded: when a finishing lifecycle hook (Stop, SessionEnd,
 	// SubagentStop) last said this agent's TURN is over.
 	//
@@ -1112,6 +1113,7 @@ func (e *Engine) execWithReceipt(
 	if board, ok := res["board"].(map[string]any); ok {
 		e.labelBoardHosts(board, hostdisplay.Current().Name)
 		e.decorateBoardQueueWakes(board, now)
+		e.decorateBoardTurns(board)
 		e.decorateBoardSocketBindings(board)
 	}
 	return res, nil

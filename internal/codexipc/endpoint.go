@@ -13,12 +13,12 @@ import (
 // symlinks, another user's files and group/other access before connecting.
 func privateEndpoint(path string) error {
 	if os.Getenv("DIBS_TEST_FORBID_APP_OPEN") == "1" && os.Getenv("DIBS_TEST_NATIVE_IPC") != "1" {
-		return ErrNoOwner // isolated daemon fixtures represent an absent desktop app
+		return ErrNoSocket // isolated daemon fixtures represent an absent desktop app
 	}
 	// #nosec G703 -- operator CODEX_HOME plus fixed ipc/ipc.sock, never a participant path.
 	socket, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return ErrNoOwner
+		return ErrNoSocket
 	}
 	if err != nil {
 		return err

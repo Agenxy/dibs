@@ -606,8 +606,9 @@ func (b toolSchemas) boardAndSpaceTools() []map[string]any {
 		},
 		{
 			"name": "board",
-			"description": "Show the board to the HUMAN: every agent, what each is working on, and " +
-				"your mailbox. Call ONLY when the HUMAN asks to see it. For routine status or full " +
+			"description": "Show the HUMAN the roster, declarations, observed turn activity, and your mailbox. " +
+				"Status describes registration and reachability. Turn unknown means no evidence of turn state. " +
+				"Call ONLY when the HUMAN asks to see it. For routine status or full " +
 				"board JSON, use check_in (detail=true for full detail). This opens a visible panel; " +
 				"changes and incoming mail are not requests to display it.",
 			"inputSchema": b.obj(map[string]any{

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agenxy/dibs/internal/testexec"
@@ -31,37 +32,39 @@ func TestMissingRolloutIsGoneThroughRunCommandsObserved(t *testing.T) {
 		{"different-thread", "thread/queue/add failed: no rollout found for thread id another-thread (code -32603)", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("CODEX_HOME", home)
-			t.Setenv("DIBS_DIR", t.TempDir())
-			t.Setenv("DIBS_TEST_QUEUE_ERROR_THREAD", "missing-thread")
-			t.Setenv("DIBS_TEST_QUEUE_ERROR", tc.errorText)
-			var observation QueueObservation
-			queue := []string{binary, "queue", "--thread", "missing-thread", "--message", Compose("request")}
-			if RunCommandsObserved(queue, []string{binary, "fallback-marker"}, "worker", "", 5*time.Second, time.Second,
-				func(o QueueObservation) { observation = o }).OK {
-				t.Fatal("failed queue command was reported as delivery")
-			}
-			attempts, err := os.ReadFile(filepath.Join(home, "queue-attempts"))
-			if err != nil || strings.TrimSpace(string(attempts)) != "missing-thread" || observation.Admission != "failed" {
-				t.Fatalf("setup: expected one real failed queue attempt: %q %v %+v", attempts, err, observation)
-			}
-			if _, err := os.Stat(filepath.Join(home, "fallback-ran")); !os.IsNotExist(err) {
-				t.Fatal("missing/temporary thread failure incorrectly ran the open-thread fallback")
-			}
-			// Marshal the public observation so this guard also compiles against
-			// the pre-fix API, where absence must fail at runtime, not compile time.
-			data, err := json.Marshal(observation)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var fields map[string]any
-			if err := json.Unmarshal(data, &fields); err != nil {
-				t.Fatal(err)
-			}
-			if gone := fields["ThreadState"] == "gone"; gone != tc.gone {
-				t.Fatalf("real queue error gone=%v, want %v: %s", gone, tc.gone, data)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("CODEX_HOME", home)
+				t.Setenv("DIBS_DIR", t.TempDir())
+				t.Setenv("DIBS_TEST_QUEUE_ERROR_THREAD", "missing-thread")
+				t.Setenv("DIBS_TEST_QUEUE_ERROR", tc.errorText)
+				var observation QueueObservation
+				queue := []string{binary, "queue", "--thread", "missing-thread", "--message", Compose("request")}
+				if RunCommandsObserved(queue, []string{binary, "fallback-marker"}, "worker", "", 5*time.Second, time.Second,
+					func(o QueueObservation) { observation = o }).OK {
+					t.Fatal("failed queue command was reported as delivery")
+				}
+				attempts, err := os.ReadFile(filepath.Join(home, "queue-attempts"))
+				if err != nil || strings.TrimSpace(string(attempts)) != "missing-thread" || observation.Admission != "failed" {
+					t.Fatalf("setup: expected one real failed queue attempt: %q %v %+v", attempts, err, observation)
+				}
+				if _, err := os.Stat(filepath.Join(home, "fallback-ran")); !os.IsNotExist(err) {
+					t.Fatal("missing/temporary thread failure incorrectly ran the open-thread fallback")
+				}
+				// Marshal the public observation so this guard also compiles against
+				// the pre-fix API, where absence must fail at runtime, not compile time.
+				data, err := json.Marshal(observation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var fields map[string]any
+				if err := json.Unmarshal(data, &fields); err != nil {
+					t.Fatal(err)
+				}
+				if gone := fields["ThreadState"] == "gone"; gone != tc.gone {
+					t.Fatalf("real queue error gone=%v, want %v: %s", gone, tc.gone, data)
+				}
+			})
 		})
 	}
 }
@@ -82,24 +85,26 @@ func TestExecThreadIsGoneBeforeQueueAdmission(t *testing.T) {
 		{name: "mismatched identity", source: "exec", reported: "different-thread"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("CODEX_HOME", home)
-			t.Setenv("DIBS_DIR", t.TempDir())
-			t.Setenv("DIBS_TEST_QUEUE_THREAD_SOURCE", tc.source)
-			t.Setenv("DIBS_TEST_QUEUE_SOURCE_THREAD", tc.reported)
-			queue := []string{binary, "queue", "--thread", "fixture-thread", "--message", Compose("request")}
-			var observation QueueObservation
-			result := RunCommandsObserved(queue, []string{binary, "fallback-marker"}, "worker", "", 5*time.Second,
-				time.Second, func(o QueueObservation) { observation = o })
-			if got := observation.ThreadState == "gone"; got != tc.gone || result.OK == tc.gone {
-				t.Fatalf("thread refused=%v, want %v: result=%+v observation=%+v", got, tc.gone, result, observation)
-			}
-			if _, err := os.Stat(filepath.Join(home, "pending.json")); tc.gone && !os.IsNotExist(err) || !tc.gone && err != nil {
-				t.Fatalf("queue write disagreed with the thread verdict: %v", err)
-			}
-			if _, err := os.Stat(filepath.Join(home, "fallback-ran")); !os.IsNotExist(err) {
-				t.Fatal("unexpected fallback command")
-			}
+			synctest.Test(t, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("CODEX_HOME", home)
+				t.Setenv("DIBS_DIR", t.TempDir())
+				t.Setenv("DIBS_TEST_QUEUE_THREAD_SOURCE", tc.source)
+				t.Setenv("DIBS_TEST_QUEUE_SOURCE_THREAD", tc.reported)
+				queue := []string{binary, "queue", "--thread", "fixture-thread", "--message", Compose("request")}
+				var observation QueueObservation
+				result := RunCommandsObserved(queue, []string{binary, "fallback-marker"}, "worker", "", 5*time.Second,
+					time.Second, func(o QueueObservation) { observation = o })
+				if got := observation.ThreadState == "gone"; got != tc.gone || result.OK == tc.gone {
+					t.Fatalf("thread refused=%v, want %v: result=%+v observation=%+v", got, tc.gone, result, observation)
+				}
+				if _, err := os.Stat(filepath.Join(home, "pending.json")); tc.gone && !os.IsNotExist(err) || !tc.gone && err != nil {
+					t.Fatalf("queue write disagreed with the thread verdict: %v", err)
+				}
+				if _, err := os.Stat(filepath.Join(home, "fallback-ran")); !os.IsNotExist(err) {
+					t.Fatal("unexpected fallback command")
+				}
+			})
 		})
 	}
 }

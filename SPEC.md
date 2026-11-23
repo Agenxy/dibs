@@ -833,6 +833,15 @@ best effort, not a promised catch-up.
 
 ## 7. Liveness: three signals, honestly labeled
 
+Board status describes registration and reachability. Every row also reports
+`turn` as `in_turn`, `between_turns`, or `unknown` when there is no applicable
+turn evidence. Known states carry `turn_observed_at`. A Claude Code prompt,
+tool, permission or Stop hook can supply this evidence. On Codex app routes,
+existing wake and diagnostic observations may corroborate running or completed
+turns against the bound thread's rollout. Queue admission and registration
+alone supply no turn evidence. A newer wake attempt invalidates an earlier
+app observation. This view is derived and board reads do not probe harnesses.
+
 | Signal | Mechanism | PROVES | Does NOT prove |
 |---|---|---|---|
 | `dead` | `kill(pid,0)` per sweep + (pid, start-time) identity | The registered process is gone. Caveat: an unreaped zombie still *appears alive* to `kill(0)`; true zombie detection arrives with kqueue `NOTE_EXIT`/pidfd (v1.1) | That its children or in-flight effects stopped |
@@ -1564,10 +1573,10 @@ for native input; an explicit terminal surface remains authoritative. Older
 bridges receive no ambiguous archived Codex plan, so mail waits for an upgraded
 bridge or reattachment instead of risking navigation.
 
-An absent app socket, the router's explicit `no-client-found`, or a proven
-before-input adapter failure permits the existing cold queue and open route
-below. Its receipt distinguishes an unloaded thread from a failed native
-adapter, reports queue admission and never claims native delivery.
+An unavailable app socket, the router's explicit `no-client-found`, or a proven
+before-input adapter failure can take the cold queue and open route below.
+The receipt distinguishes unavailable direct input, an unloaded thread reported
+by the router, and a failed adapter. Queue admission is reported separately.
 Measured 2026-11-16, the cold route uses only
 `/usr/bin/open -g codex://threads/wake/<id>` after queue admission. This handler
 does not navigate a window; the owned-thread path makes no open call. No
@@ -1596,9 +1605,12 @@ prompt background policy. No queue item is deleted and no coordination state is 
 
 Board rows (including compact `check_in`) and agent `send` receipts expose
 `queue_wake` for a configured local ChatGPT queue route. `native_delivery`
-adds accepted, settled, not_sent, unknown, queued_unloaded or queued_native_failed;
-historical started/steered observations remain readable. Native input uses
-`admission: not_queued` and `pending: not_applicable`. These are the last
+adds accepted, settled, not_sent, unknown, queue_only, queued_unloaded or
+queued_native_failed. `queue_only` records that direct input was unavailable
+because the socket was missing or had no listener. The `admission` field
+reports the queue outcome. Historical started/steered observations remain
+readable. Native input uses `admission: not_queued` and
+`pending: not_applicable`. These are the last
 adapter outcome, not a receipt for a later send. Before background delivery, an
 eligible fresh send with no prior native outcome instead reports
 `native_delivery: in_progress`, without an observation timestamp, and directs

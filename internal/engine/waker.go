@@ -65,6 +65,7 @@ type wakers struct {
 	queuedPrompt  map[string]time.Time
 	queueObserved map[string]queueWakeRecord
 	diagnostics   map[string]wakeDiagnostic
+	appBoardTurns map[string]appBoardTurn
 	queueEpoch    uint64
 	last          map[string]time.Time
 	// Only actual failed delivery may arm one cause-fenced retry.
@@ -133,6 +134,7 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 	e.wakers.fails = nil         // a changed configuration is what fixing a command looks like
 	e.wakers.queueObserved = nil // observations describe the previous route
 	e.wakers.diagnostics = nil
+	e.wakers.appBoardTurns = nil
 	e.wakers.queueEpoch++
 	for harness, c := range cmds {
 		if len(c.Argv) == 0 {
@@ -1319,6 +1321,7 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 
 func (e *Engine) runWakePlan(plan *wakePlan, agent string) (accepted bool) {
 	started := time.Now()
+	e.noteAppBoardWake(*plan, started)
 	defer func() { e.noteWakeDiagnostic(plan, agent, started, accepted) }()
 	if plan.host != "" {
 		return e.requestRemoteWakePlan(plan, agent, wakeTimeout+wakeGrace)
@@ -1336,11 +1339,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) (accepted bool) {
 				if plan.queueOutcome != nil {
 					*plan.queueOutcome = observation
 				}
-				if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "unloaded" {
-					observation.Delivery = "queued_unloaded"
-				} else if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "native_failed" {
-					observation.Delivery = "queued_native_failed"
-				}
+				observation.Delivery = queueFallbackDelivery(plan.nativeOutcome)
 				e.noteQueueObservation(*plan, agent, observation)
 			})
 		if !plan.queueThreadGone() && !plan.commandOutcome.NoRetry && !plan.commandOutcome.Deferred {

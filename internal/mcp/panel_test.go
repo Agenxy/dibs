@@ -124,7 +124,7 @@ func TestSummaryCountsSurviveTrimming(t *testing.T) {
 		"inbox": core.Result{"messages": []core.Result{{"serial": 1}, {"serial": 2}}},
 	}
 	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
-	for _, want := range []string{"2 agent(s)", "1 active", "2 unread"} {
+	for _, want := range []string{"2 agent(s)", "1 registered", "2 unknown", "2 unread"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary %q lost %q", text, want)
 		}

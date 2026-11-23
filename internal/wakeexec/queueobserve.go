@@ -93,7 +93,10 @@ func (r queueRPC) admission(thread string, corroborate bool) queueProbe {
 	p.issuedAt = r.issuedAt
 	if corroborate && !p.known && p.threadSource != "" {
 		// threadSource required the metadata reply to name this exact target.
-		p.lastTurn = r.lastAppTurnStarted(thread)
+		observedAt := time.Now().UTC()
+		latest := r.lastAppTurn(thread)
+		p.lastTurn = latest.StartedAt
+		p.turnActivity = latest.activity(thread, observedAt)
 	}
 	return p
 }

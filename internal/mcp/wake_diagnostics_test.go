@@ -96,7 +96,86 @@ func TestWakeDiagnosticsReadsAppMetadataThroughMCP(t *testing.T) {
 	if err != nil || afterSerial != serial {
 		t.Fatalf("diagnostics changed board serial %d to %d: %v", serial, afterSerial, err)
 	}
+	assertBoardTurnFromCodexDiagnostics(t, eng, lead["token"].(string), home, thread)
 	assertWakeDiagnosticsRecordsActualAttempt(t, srv, eng, lead["token"])
+	assertBoardTurnFromQueueCorroboration(t, srv, eng, lead["token"])
+}
+
+func assertBoardTurnFromCodexDiagnostics(t *testing.T, eng *engine.Engine, token, home, thread string) {
+	t.Helper()
+	assertTurn := func(t *testing.T, want string) {
+		t.Helper()
+		row := boardDiagnosticWorker(t, eng)
+		if row["turn"] != want {
+			t.Errorf("board turn = %v, want %q", row["turn"], want)
+		}
+		if (row["turn_observed_at"] != nil) != (want != "unknown") {
+			t.Errorf("board turn observation time = %v with state %v", row["turn_observed_at"], row["turn"])
+		}
+	}
+	t.Run("queue-and-timestamp-only", func(t *testing.T) { assertTurn(t, "unknown") })
+
+	const turn = "019ab8e1-0140-7aaa-8aaa-4c1d2e3f4a5b"
+	t.Setenv("DIBS_TEST_QUEUE_LAST_TURN_ID", turn)
+	dir := filepath.Join(home, "sessions")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-test-"+thread+".jsonl")
+	start := time.Unix(1795200000, 0).UTC()
+	for _, tc := range []struct {
+		name, completeID, status, want string
+		newStart                       bool
+	}{
+		{"mismatched-completion", "unrelated", "completed", "unknown", false},
+		{"newer-turn", turn, "completed", "unknown", true},
+		{"interrupted-read", "", "interrupted", "unknown", false},
+		{"confirmed-running", "", "inProgress", "in_turn", false},
+		{"matching-completion", turn, "completed", "between_turns", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DIBS_TEST_QUEUE_LAST_TURN_STATUS", tc.status)
+			var b bytes.Buffer
+			enc := json.NewEncoder(&b)
+			write := func(at time.Time, kind string, payload map[string]string) {
+				t.Helper()
+				if err := enc.Encode(map[string]any{"timestamp": at, "type": kind, "payload": payload}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(start, "session_meta", map[string]string{"id": thread})
+			write(start, "event_msg", map[string]string{"type": "task_started", "turn_id": turn})
+			if tc.completeID != "" {
+				write(start.Add(time.Second), "event_msg", map[string]string{"type": "task_complete", "turn_id": tc.completeID})
+			}
+			if tc.newStart {
+				write(start.Add(2*time.Second), "event_msg", map[string]string{"type": "task_started", "turn_id": "newer"})
+			}
+			if err := os.WriteFile(path, b.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := eng.DiagnoseWake(t.Context(), token, "queue-worker")
+			if err != nil || got["app"] == nil {
+				t.Fatalf("setup: diagnose wake: %v %v", got, err)
+			}
+			assertTurn(t, tc.want)
+		})
+	}
+}
+
+func boardDiagnosticWorker(t *testing.T, eng *engine.Engine) map[string]any {
+	t.Helper()
+	board, err := eng.Board(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range board["agents"].([]map[string]any) {
+		if row["id"] == "queue-worker" {
+			return row
+		}
+	}
+	t.Fatal("setup: missing queue worker")
+	return nil
 }
 
 func assertWakeDiagnosticsRecordsActualAttempt(
@@ -106,11 +185,26 @@ func assertWakeDiagnosticsRecordsActualAttempt(
 	if _, err := eng.Do(t.Context(), &core.Op{Kind: core.OpSweep, DeadAgents: []string{"queue-worker"}}); err != nil {
 		t.Fatal("setup: set worker dormant:", err)
 	}
+	if turn := boardDiagnosticWorker(t, eng)["turn"]; turn != "between_turns" {
+		t.Fatalf("setup: no old completion to invalidate: %v", turn)
+	}
 	sent := toolCall(t, srv, "send", map[string]any{
 		"token": token, "to": "queue-worker", "type": "question", "body": "private diagnostic mail",
 	})
 	if sent["msg_serial"] == nil || sent["code"] != nil {
 		t.Fatalf("setup: send to dormant worker: %v", sent)
+	}
+	// Board reads must not refresh the earlier completion after a new wake.
+	untilStale := time.Now().Add(5 * time.Second)
+	for {
+		row := boardDiagnosticWorker(t, eng)
+		if row["turn"] == "unknown" && row["turn_observed_at"] == nil {
+			break
+		}
+		if time.Now().After(untilStale) {
+			t.Fatalf("a new wake did not invalidate the previous turn observation: %v", row)
+		}
+		<-time.After(20 * time.Millisecond)
 	}
 	until := time.Now().Add(5 * time.Second)
 	for {
@@ -125,5 +219,34 @@ func assertWakeDiagnosticsRecordsActualAttempt(
 			t.Fatalf("diagnostics never observed the queue route: %v", got)
 		}
 		<-time.After(150 * time.Millisecond)
+	}
+}
+
+func assertBoardTurnFromQueueCorroboration(t *testing.T, srv *httptest.Server, eng *engine.Engine, token any) {
+	t.Helper()
+	row := boardDiagnosticWorker(t, eng)
+	earlier, ok := row["turn_observed_at"].(time.Time)
+	if row["turn"] != "between_turns" || !ok {
+		t.Fatalf("setup: need the preceding diagnostic observation: %v", row)
+	}
+	// The previous retained wake wrote a fresh receipt. An unavailable queue
+	// read makes the wake path corroborate that receipt with turn metadata.
+	t.Setenv("DIBS_TEST_QUEUE_LIST_UNKNOWN", "1")
+	sent := toolCall(t, srv, "send", map[string]any{
+		"token": token, "to": "queue-worker", "type": "question", "body": "second private diagnostic mail",
+	})
+	if sent["msg_serial"] == nil || sent["code"] != nil {
+		t.Fatalf("setup: send second question: %v", sent)
+	}
+	until := time.Now().Add(5 * time.Second)
+	for {
+		row := boardDiagnosticWorker(t, eng)
+		if at, ok := row["turn_observed_at"].(time.Time); ok && at.After(earlier) && row["turn"] == "between_turns" {
+			return
+		}
+		if time.Now().After(until) {
+			t.Fatalf("queue corroboration did not refresh board evidence: %v", row)
+		}
+		<-time.After(20 * time.Millisecond)
 	}
 }
