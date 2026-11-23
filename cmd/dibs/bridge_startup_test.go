@@ -9,15 +9,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -35,6 +36,7 @@ import (
 // the board absent beyond the ordinary ten-second retry, and then serve the
 // real MCP implementation. Discovery must preserve the daemon's own contract.
 func TestBridgeStartupWaitsForALateDaemon(t *testing.T) {
+	t.Parallel()
 	for _, method := range []string{"server/discover", "initialize", "tools/list"} {
 		t.Run(method, func(t *testing.T) {
 			t.Parallel()
@@ -197,28 +199,65 @@ func installReconnectFakeAppOpen() {
 // harness's thirty-second deadline, including the read of the response.
 func TestBridgeStartupWaitIsBoundedWhenTheDaemonAcceptsButNeverAnswers(t *testing.T) {
 	t.Parallel()
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		<-release
-	}))
-	defer func() { close(release); srv.Close() }()
-	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	req, err := http.NewRequest(http.MethodPost, srv.URL, bytes.NewReader(line))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	out := &syncWriter{w: bufio.NewWriter(&buf)}
-	start := time.Now()
-	forward(srv.Client(), req, line, out, nil)
-	out.flush()
-	if elapsed := time.Since(start); elapsed > 27*time.Second {
-		t.Fatalf("startup outlived its bound: %s", elapsed)
-	}
-	var reply map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &reply); err != nil || reply["error"] == nil {
-		t.Fatalf("unavailable startup did not answer with an error: %s (%v)", buf.String(), err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		clientConn, daemonConn := net.Pipe()
+		defer func() { _ = clientConn.Close(); _ = daemonConn.Close() }()
+		transport := &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+			return clientConn, nil
+		}}
+		defer transport.CloseIdleConnections()
+
+		// Use the real HTTP/1 request and cancellation path, with a pipe
+		// so the test clock can advance while the daemon withholds its reply.
+		accepted := make(chan []byte, 1)
+		release := make(chan struct{})
+		defer close(release)
+		go func() {
+			req, err := http.ReadRequest(bufio.NewReader(daemonConn))
+			if err != nil {
+				t.Error("read startup request:", err)
+				return
+			}
+			body, err := io.ReadAll(req.Body)
+			_ = req.Body.Close()
+			if err != nil {
+				t.Error("read startup request body:", err)
+				return
+			}
+			accepted <- body
+			<-release
+		}()
+
+		line := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+		// The caller's later deadline makes a missing bridge deadline fail
+		// the assertion instead of deadlocking the bubble.
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://board.test/mcp", bytes.NewReader(line))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		out := &syncWriter{w: bufio.NewWriter(&buf)}
+		start := time.Now()
+		forward(&http.Client{Transport: transport}, req, line, out, nil)
+		out.flush()
+		if elapsed := time.Since(start); elapsed != 25*time.Second {
+			t.Fatalf("startup bound = %s, want 25s", elapsed)
+		}
+		select {
+		case body := <-accepted:
+			if !bytes.Equal(body, line) {
+				t.Fatalf("daemon received %q, want %q", body, line)
+			}
+		default:
+			t.Fatal("daemon never accepted the HTTP request")
+		}
+		var reply map[string]any
+		if err := json.Unmarshal(buf.Bytes(), &reply); err != nil || reply["error"] == nil || reply["id"] != float64(1) {
+			t.Fatalf("unavailable startup did not answer with an error: %s (%v)", buf.String(), err)
+		}
+	})
 }
 
 func lateBridgeStartup(t *testing.T, method string) {

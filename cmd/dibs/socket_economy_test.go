@@ -387,6 +387,7 @@ func (f *economyFixture) waitOffer(t *testing.T) string {
 func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
 	for _, mode := range []string{"mid-turn-question", "mid-turn-notify", "idle-question", "idle-notify"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			f := newEconomyFixture(t)
 			f.hook(t, "Stop")
 			busy := strings.HasPrefix(mode, "mid-turn-")
@@ -423,6 +424,7 @@ func TestSocketEconomyBridgeHonorsConfiguredPhase(t *testing.T) {
 	for _, phase := range []string{"all", "urgent", "none"} {
 		for _, kind := range []string{"notify", "question"} {
 			t.Run(phase+"/"+kind, func(t *testing.T) {
+				t.Parallel()
 				f := newEconomyFixture(t)
 				f.eng.ApplySetting("wake.extend_turn_for", phase)
 				// A configured command must not hide the bridge's real route
@@ -471,6 +473,7 @@ func TestSocketEconomyBridgeHonorsConfiguredPhase(t *testing.T) {
 func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 	for _, mode := range []string{"approved", "grant-approved", "answered", "flag", "flag-after-done", "progress", "accepted", "done-waiting", "done-unblocked"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			f := newEconomyFixture(t)
 			f.tool(t, "check_in", map[string]any{"token": f.worker})
 			review := mode == "flag" || mode == "flag-after-done" || mode == "accepted"
@@ -582,6 +585,8 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 }
 
 func TestSocketEconomyFreshMailBeyondOldCooldown(t *testing.T) {
+	// Run the real silence window alongside other isolated top-level tests.
+	t.Parallel()
 	for _, mode := range []string{"unknown", "busy", "idle"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()

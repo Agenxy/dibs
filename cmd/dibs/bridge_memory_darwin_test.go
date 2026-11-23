@@ -50,7 +50,12 @@ func TestBridgeMemoryBudget(t *testing.T) {
 		if upgraded {
 			name = "upgraded"
 		}
-		t.Run(name, func(t *testing.T) { testBridgeMemoryBudget(t, bin, upgraded) })
+		t.Run(name, func(t *testing.T) {
+			// Each bridge has its own daemon, environment, and footprint target.
+			// Both still get the full idle intervals and sample count.
+			t.Parallel()
+			testBridgeMemoryBudget(t, bin, upgraded)
+		})
 	}
 }
 
