@@ -11,7 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 func TestAntigravityPluginStagesTheSelectedBridge(t *testing.T) {
@@ -169,21 +172,22 @@ func TestAntigravityTrustPreservesProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := bytes.Replace(original, []byte(`["mcp(other/tool)"]`), []byte(`["mcp(other/tool)","mcp(dibs/*)"]`), 1)
-	var got, want any
-	if err := json.Unmarshal(expected, &want); err != nil {
+	allow := []string{"mcp(other/tool)", "mcp(dibs/*)"}
+	for _, tool := range mcp.ToolNames() {
+		allow = append(allow, "mcp(dibs/"+tool+")")
+	}
+	expected, err := json.Marshal(allow)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(updated, &got); err != nil || !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected Antigravity settings after granting trust: %s (%v)", updated, err)
-	}
+	assertAntigravityJSON(t, updated, strings.Replace(string(original), `["mcp(other/tool)"]`, string(expected), 1))
 	d = &diagnosis{json: true}
 	d.checkAntigravityGrants()
 	if len(d.checks) != 0 {
 		t.Fatalf("profile with scoped grant produced checks: %+v", d.checks)
 	}
-	if changed, err := addAntigravityDibsGrant(settings); err != nil || changed {
-		t.Fatalf("repeated trust wrote the profile: changed=%v, err=%v", changed, err)
+	if added, err := addAntigravityDibsGrants(settings); err != nil || added != 0 {
+		t.Fatalf("repeated trust wrote the profile: added=%d, err=%v", added, err)
 	}
 	if err := replaceAntigravitySettings(settings, 0o600, original, original); err == nil {
 		t.Fatal("concurrent Antigravity settings edit was overwritten")
@@ -191,4 +195,48 @@ func TestAntigravityTrustPreservesProfile(t *testing.T) {
 	if current, err := os.ReadFile(settings); err != nil || !bytes.Equal(current, updated) {
 		t.Fatalf("repeat or concurrent update changed the profile: %s (%v)", current, err)
 	}
+}
+
+func TestAntigravityTrustCompletesExistingWildcard(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := filepath.Join(home, ".gemini", "config")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mcp_config.json"), []byte(`{"mcpServers":{"dibs":{}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tools := mcp.ToolNames()
+	allow := []string{"mcp(dibs/*)"}
+	for _, tool := range tools[:len(tools)-1] {
+		allow = append(allow, "mcp(dibs/"+tool+")")
+	}
+	const configFormat = `{"userSettings":{"globalPermissionGrants":{"allow":%s}}}`
+	raw, err := json.Marshal(allow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(settings, fmt.Appendf(nil, configFormat, raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := &diagnosis{json: true}
+	d.checkAntigravityGrants()
+	if len(d.checks) != 1 || d.checks[0].Fix != antigravityTrustCommand || !strings.HasPrefix(d.checks[0].What, "1 ") {
+		t.Fatalf("expected one missing rule despite wildcard: %+v", d.checks)
+	}
+	if added, err := addAntigravityDibsGrants(settings); err != nil || added != 1 {
+		t.Fatalf("wanted exactly one new rule, added %d: %v", added, err)
+	}
+	updated, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err = json.Marshal(append(allow, "mcp(dibs/"+tools[len(tools)-1]+")"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAntigravityJSON(t, updated, fmt.Sprintf(configFormat, raw))
 }
