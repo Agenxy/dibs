@@ -35,6 +35,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- The board labels old pending Codex queue observations as stale and keeps
+  the original observation time.
 - Restarting the daemon preserves confirmed posting evidence for human
   questions and requests and retries still-open, unconfirmed asks through
   the existing notification route. Human mail reports unknown posting

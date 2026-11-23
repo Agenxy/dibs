@@ -15,7 +15,7 @@ func TestSharedRendererShowsObservedQueueWakeAndUnknownAge(t *testing.T) {
 	if err != nil {
 		t.Skip("bun unavailable")
 	}
-	for _, kind := range []string{"pending", "unknown"} {
+	for _, kind := range []string{"pending", "unknown", "stale"} {
 		t.Run(kind, func(t *testing.T) {
 			js := BoardJS() + `
 const kind = "` + kind + `";
@@ -24,10 +24,13 @@ if (kind === "pending") {
   queue.issued_at = new Date(Date.now() - 13 * 3600000).toISOString();
   queue.observed_at = new Date().toISOString();
 }
+if (kind === "stale") queue.observed_at = new Date(Date.now() - 26 * 60000).toISOString();
 const html = Board.laneHTML({id:"worker", queue_wake:queue});
-if (!html.includes("thread state unknown") || !html.includes("does not confirm a started turn or read mail")) throw new Error(html);
+if (!html.includes("Thread state unknown") || !html.includes("does not confirm a started turn or read mail")) throw new Error(html);
 if (kind === "pending" && (!html.includes("wake last seen pending") || !html.includes("13h"))) throw new Error(html);
 if (kind === "unknown" && (!html.includes("pending unknown") || !html.includes("age unknown"))) throw new Error(html);
+if (kind === "stale" && (!html.includes("wake observation stale") ||
+  !html.includes("Last observed 26m ago") || !html.includes("Current queue status unknown"))) throw new Error(html);
 `
 			if out, err := exec.Command(bun, "-e", js).CombinedOutput(); err != nil {
 				t.Fatalf("queue wake hidden or overstated in shared renderer: %v: %s", err, out)

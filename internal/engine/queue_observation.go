@@ -13,6 +13,10 @@ import (
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
+// Allow one short observation window before calling a retained queue item
+// stale. The display window has no effect on admission or wake retries.
+const queueObservationFreshFor = 10 * time.Second
+
 type queueWakeRecord struct {
 	thread        string
 	createdSerial uint64
@@ -98,6 +102,9 @@ func (e *Engine) queueWakeView(agent *core.Agent, now time.Time) core.Result {
 	}
 	v["admission"], v["pending"] = o.Admission, o.Pending
 	v["observed_at"], v["observation_age_seconds"] = o.At, elapsedSeconds(o.At, now)
+	if o.Pending == "pending" && now.Sub(o.At) >= queueObservationFreshFor {
+		v["pending"] = "stale"
+	}
 	if !o.IssuedAt.IsZero() {
 		v["issued_at"] = o.IssuedAt
 		v["wake_age_seconds"], v["age_source"] = elapsedSeconds(o.IssuedAt, now), o.AgeSource
@@ -161,7 +168,7 @@ func queueWakeNote(v core.Result) string {
 		return "App queue observation unavailable. A recent receipt deferred this wake. " +
 			"Unread mail remains eligible when another delivery event arrives."
 	}
-	if delivery, ok := v["native_delivery"].(string); ok {
+	if delivery, ok := v["native_delivery"].(string); ok && v["pending"] != "stale" {
 		return nativeQueueWakeNote(delivery, v)
 	}
 	text := "App queue admission: " + fmt.Sprint(v["admission"]) +

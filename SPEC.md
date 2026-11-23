@@ -1607,8 +1607,11 @@ acquire a pending attempt. When a prior native outcome exists, it remains
 explicitly a prior observation. Native success confirms app input only.
 Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds
 the last adapter observation, never a fresh read: `admission` is accepted,
-retained, deferred, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
-`observed_at` and `observation_age_seconds` date that observation. When known,
+retained, deferred, failed, not_attempted or unconfirmed. A pending observation
+is projected as `stale` after ten seconds without a newer observation.
+`observed_at` and `observation_age_seconds` still date the original observation.
+The age changes only the display. Queue admission and retry decisions use their
+own evidence. When known,
 `issued_at`, `wake_age_seconds` and `age_source` distinguish a timestamped notice
 from this command's local admission. An unavailable probe may expose
 `retained_receipt_at` and `receipt_age_seconds`, dating only the retained fallback

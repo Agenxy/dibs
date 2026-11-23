@@ -130,11 +130,13 @@ const Board = (() => {
       return explained("tag", "app thread gone", "No rollout found for this thread. No automatic retry; bind this agent from an existing app thread. Mail remains in its mailbox.")
     }
     const age = q.issued_at ? ago(q.issued_at) : "age unknown"
-    const state = q.pending === "pending" ? "last seen pending" :
+    const state = q.pending === "stale" ? "observation stale" :
+      q.pending === "pending" ? "last seen pending" :
       q.admission === "accepted" ? "admitted" : "pending unknown"
-    const observed = q.observed_at ? `last observed ${ago(q.observed_at)} ago` : "not yet observed"
+    const observed = q.observed_at ? `Last observed ${ago(q.observed_at)} ago.` : "No observation yet."
+    const freshness = q.pending === "stale" ? " Current queue status unknown." : ""
     return explained("tag", `wake ${state}, ${age}`,
-      `${observed}; thread state unknown. Admission to the queue does not confirm a started turn or read mail.`)
+      `${observed}${freshness} Thread state unknown. Admission to the queue does not confirm a started turn or read mail.`)
   }
 
   /**
