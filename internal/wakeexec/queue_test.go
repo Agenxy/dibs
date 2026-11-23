@@ -204,32 +204,59 @@ func TestQueueProbeTimeoutAndChangedShapeAreUnknown(t *testing.T) {
 		t.Fatalf("fixture build %v: %s", err, b)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	start := time.Now()
-	pending, known := observeQueue(binary, "fixture-thread")
-	if pending || known {
-		t.Fatal("a timeout was guessed to be an observed queue")
-	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Fatalf("probe did not kill/reap at its deadline: %v", elapsed)
-	}
+	// The first measured launch can miss readiness even after preparation.
+	t.Setenv("DIBS_TEST_QUEUE_COLD_EXEC", filepath.Join(home, "cold-probe"))
 	pidPath := filepath.Join(home, "probe.pid")
-	if err := os.Remove(pidPath); err != nil {
-		t.Fatalf("setup: queue probe did not reach the stall: %v", err)
+	checkStalledQueueProbe(t, pidPath, "queue probe", func(_ time.Time) {
+		pending, known := observeQueue(binary, "fixture-thread")
+		if pending || known {
+			t.Fatal("a timeout was guessed to be an observed queue")
+		}
+	})
+	checkStalledQueueProbe(t, pidPath, "contact probe", func(start time.Time) {
+		if got := ObserveQueueContact(t.Context(), binary, "fixture-thread", start, start.Add(-time.Minute)); got != QueueContactWait {
+			t.Fatalf("contact probe guessed at thread activity after a timeout: %v", got)
+		}
+	})
+	for _, s := range []string{`{}`, `{"data":null,"nextCursor":null}`, `{"data":[],"nextCursor":4}`, `{"data":[{}],"nextCursor":null}`} {
+		if _, known, _ := queuePage([]byte(s)); known {
+			t.Fatalf("changed shape accepted: %s", s)
+		}
 	}
-	start = time.Now()
-	if got := ObserveQueueContact(t.Context(), binary, "fixture-thread", start, start.Add(-time.Minute)); got != QueueContactWait {
-		t.Fatalf("contact probe guessed at thread activity after a timeout: %v", got)
+}
+
+func checkStalledQueueProbe(t *testing.T, pidPath, name string, probe func(time.Time)) {
+	t.Helper()
+	const attempts = 3
+	for range attempts {
+		start := time.Now()
+		probe(start)
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Fatalf("%s did not kill/reap at its deadline: %v", name, elapsed)
+		}
+		probePID, err := os.ReadFile(pidPath)
+		if errors.Is(err, os.ErrNotExist) {
+			// The probe timed out before the fixture reached the stall. The
+			// timeout still had to return unknown and meet the same deadline.
+			continue
+		}
+		if err != nil {
+			t.Fatalf("setup: read %s readiness: %v", name, err)
+		}
+		assertQueueProbeReaped(t, name, probePID)
+		if err := os.Remove(pidPath); err != nil {
+			t.Fatalf("setup: clear %s readiness: %v", name, err)
+		}
+		return
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Errorf("contact probe exceeded its deadline: %v", elapsed)
-	}
-	probePID, err := os.ReadFile(pidPath)
-	if err != nil {
-		t.Fatalf("setup: contact probe did not reach the stall: %v", err)
-	}
+	t.Fatalf("setup: %s did not reach the stall in %d attempts", name, attempts)
+}
+
+func assertQueueProbeReaped(t *testing.T, name string, probePID []byte) {
+	t.Helper()
 	pid, err := strconv.Atoi(string(probePID))
 	if err != nil || pid <= 0 {
-		t.Fatalf("setup: invalid contact probe PID %q", probePID)
+		t.Fatalf("setup: invalid %s PID %q", name, probePID)
 	}
 	if runtime.GOOS != "windows" {
 		process, err := os.FindProcess(pid)
@@ -240,15 +267,10 @@ func TestQueueProbeTimeoutAndChangedShapeAreUnknown(t *testing.T) {
 		err = process.Signal(syscall.Signal(0))
 		if err == nil {
 			_ = process.Kill()
-			t.Fatal("timed-out contact subprocess remained in the process table")
+			t.Fatalf("timed-out %s subprocess remained in the process table", name)
 		}
 		if !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH) {
-			t.Fatalf("could not verify contact subprocess cleanup: %v", err)
-		}
-	}
-	for _, s := range []string{`{}`, `{"data":null,"nextCursor":null}`, `{"data":[],"nextCursor":4}`, `{"data":[{}],"nextCursor":null}`} {
-		if _, known, _ := queuePage([]byte(s)); known {
-			t.Fatalf("changed shape accepted: %s", s)
+			t.Fatalf("could not verify %s subprocess cleanup: %v", name, err)
 		}
 	}
 }

@@ -226,7 +226,12 @@ func main() {
 		os.Exit(5)
 	}
 	if os.Getenv("DIBS_QUEUE_PROBE_STALL") == "1" {
-		if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "probe.pid"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		// A timeout during the write must not publish a partial PID.
+		pid := filepath.Join(os.Getenv("CODEX_HOME"), "probe.pid")
+		if err := os.WriteFile(pid+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			panic(err)
+		}
+		if err := os.Rename(pid+".tmp", pid); err != nil {
 			panic(err)
 		}
 		time.Sleep(time.Hour)
