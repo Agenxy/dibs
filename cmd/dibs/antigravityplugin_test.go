@@ -29,6 +29,16 @@ func TestAntigravityPluginStagesTheSelectedBridge(t *testing.T) {
 			t.Errorf("plugin is missing %s: %v", name, err)
 		}
 	}
+	var manifest struct {
+		Name string `json:"name"`
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "plugin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil || manifest.Name != antigravityPluginName {
+		t.Fatalf("plugin namespace would differ from its configured grant: %q (%v)", manifest.Name, err)
+	}
 	var config struct {
 		MCPServers map[string]struct {
 			Command string            `json:"command"`
@@ -149,7 +159,8 @@ func TestAntigravityTrustPreservesProfile(t *testing.T) {
 	}
 	settings := filepath.Join(dir, "config.json")
 	original := []byte(`{"unrelated":{"value":1},"userSettings":{"theme":"system",` +
-		`"globalPermissionGrants":{"allow":["mcp(other/tool)"],"deny":["mcp(dibs/other)"],"ask":["terminal(*)"]}}}`)
+		`"globalPermissionGrants":{"allow":["mcp(other/tool)","mcp(dibs/check_in)"],` +
+		`"deny":["mcp(dibs/other)"],"ask":["terminal(*)"]}}}`)
 	if err := os.WriteFile(settings, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -165,6 +176,9 @@ func TestAntigravityTrustPreservesProfile(t *testing.T) {
 	if len(d.checks) != 1 || d.checks[0].Level != "warning" || d.checks[0].Fix != antigravityTrustCommand {
 		t.Fatalf("expected scoped grant guidance: %+v", d.checks)
 	}
+	if !strings.Contains(d.checks[0].What, "dibs_dibs") {
+		t.Fatalf("native grant warning should name the runtime server: %+v", d.checks)
+	}
 	if err := trustAntigravityPlugin(); err != nil {
 		t.Fatal(err)
 	}
@@ -172,28 +186,47 @@ func TestAntigravityTrustPreservesProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allow := []string{"mcp(other/tool)", "mcp(dibs/*)"}
+	allow := []string{"mcp(other/tool)", "mcp(dibs/check_in)", "mcp(dibs_dibs/*)"}
 	for _, tool := range mcp.ToolNames() {
-		allow = append(allow, "mcp(dibs/"+tool+")")
+		allow = append(allow, "mcp(dibs_dibs/"+tool+")")
 	}
 	expected, err := json.Marshal(allow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAntigravityJSON(t, updated, strings.Replace(string(original), `["mcp(other/tool)"]`, string(expected), 1))
+	assertAntigravityJSON(t, updated, strings.Replace(string(original),
+		`["mcp(other/tool)","mcp(dibs/check_in)"]`, string(expected), 1))
 	d = &diagnosis{json: true}
 	d.checkAntigravityGrants()
 	if len(d.checks) != 0 {
 		t.Fatalf("profile with scoped grant produced checks: %+v", d.checks)
 	}
-	if added, err := addAntigravityDibsGrants(settings); err != nil || added != 0 {
-		t.Fatalf("repeated trust wrote the profile: added=%d, err=%v", added, err)
+	if err := trustAntigravityPlugin(); err != nil {
+		t.Fatal(err)
 	}
 	if err := replaceAntigravitySettings(settings, 0o600, original, original); err == nil {
 		t.Fatal("concurrent Antigravity settings edit was overwritten")
 	}
 	if current, err := os.ReadFile(settings); err != nil || !bytes.Equal(current, updated) {
 		t.Fatalf("repeat or concurrent update changed the profile: %s (%v)", current, err)
+	}
+	// A manual entry alongside the plugin still needs its own rules.
+	if err := os.WriteFile(filepath.Join(dir, "mcp_config.json"), []byte(`{"mcpServers":{"dibs":{}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d = &diagnosis{json: true}
+	d.checkAntigravityGrants()
+	if len(d.checks) != 2 || d.checks[0].Fix != antigravityPluginUsage ||
+		!strings.Contains(d.checks[1].What, "on dibs lack") {
+		t.Fatalf("expected a duplicate warning and manual grant guidance: %+v", d.checks)
+	}
+	if err := trustAntigravityPlugin(); err != nil {
+		t.Fatal(err)
+	}
+	d = &diagnosis{json: true}
+	d.checkAntigravityGrants()
+	if len(d.checks) != 1 || d.checks[0].Fix != antigravityPluginUsage {
+		t.Fatalf("both configured servers should now have complete rules: %+v", d.checks)
 	}
 }
 
@@ -227,7 +260,7 @@ func TestAntigravityTrustCompletesExistingWildcard(t *testing.T) {
 	if len(d.checks) != 1 || d.checks[0].Fix != antigravityTrustCommand || !strings.HasPrefix(d.checks[0].What, "1 ") {
 		t.Fatalf("expected one missing rule despite wildcard: %+v", d.checks)
 	}
-	if added, err := addAntigravityDibsGrants(settings); err != nil || added != 1 {
+	if added, err := addAntigravityDibsGrants(settings, []string{"dibs"}); err != nil || added != 1 {
 		t.Fatalf("wanted exactly one new rule, added %d: %v", added, err)
 	}
 	updated, err := os.ReadFile(settings)

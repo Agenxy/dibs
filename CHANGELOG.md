@@ -10,7 +10,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skill with `dibs antigravity-plugin install`. An existing manual Dibs entry
   moves into the plugin with its server settings.
 - `dibs antigravity-plugin --trust` adds the Antigravity Dibs wildcard and
-  explicit rules for every Dibs tool. `dibs doctor` reports missing tool rules.
+  explicit rules for every Dibs tool under the configured server name.
+  `dibs doctor` reports missing rules for `dibs_dibs` or a manual `dibs` server.
 - Release archives include static Linux riscv64 binaries. CI cross-builds
   that target and runs the state machine, ledger, and board configuration tests
   under QEMU.

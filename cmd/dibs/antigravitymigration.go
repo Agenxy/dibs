@@ -12,7 +12,7 @@ import (
 )
 
 func antigravityPluginServerPath(dir string) string {
-	return filepath.Join(dir, "plugins", "dibs", "mcp_config.json")
+	return filepath.Join(dir, "plugins", antigravityPluginName, "mcp_config.json")
 }
 
 func antigravityServerMigration(dir string) (antigravitySettingsFile, json.RawMessage, []byte, error) {
