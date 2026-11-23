@@ -3,7 +3,11 @@
 
 package wakeexec
 
-import "time"
+import (
+	"time"
+
+	"github.com/agenxy/dibs/internal/harnessenv"
+)
 
 // QueueThreadExecSource denotes a one-shot Codex CLI run.
 const QueueThreadExecSource = "exec"
@@ -31,7 +35,8 @@ type QueueObservation struct {
 	IssuedAt     time.Time
 	ReceiptAt    time.Time
 	AgeSource    string
-	ProbeBinary  string `json:"-"` // local executable that admitted this item
+	ProbeBinary  string                  `json:"-"` // local executable that admitted this item
+	TurnActivity harnessenv.TurnActivity `json:"-"`
 }
 
 type queueProbe struct {
@@ -42,4 +47,5 @@ type queueProbe struct {
 	receipt        string // exact observation result, never a delivery inference
 	threadSource   string
 	lastTurn       *time.Time
+	turnActivity   harnessenv.TurnActivity
 }

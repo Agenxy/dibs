@@ -25,12 +25,14 @@ type wakeDiagnostic struct {
 
 type wakeDiagnosticTarget struct {
 	owner, session, thread, binary string
-	incarnation, commandEpoch      uint64
+	incarnation, queueEpoch        uint64
+	commandEpoch                   string
 	antigravity                    uint64
 }
 
 // DiagnoseWake reads one binding and, for a configured local app route, its
-// read-only app metadata. It leaves activity and delivery receipts alone.
+// read-only app metadata. It leaves coordination timestamps and delivery
+// receipts alone.
 func (e *Engine) DiagnoseWake(ctx context.Context, token, ref string) (core.Result, error) {
 	var target wakeDiagnosticTarget
 	res, err := e.query(ctx, func() core.Result {
@@ -72,6 +74,12 @@ func (e *Engine) DiagnoseWake(ctx context.Context, token, ref string) (core.Resu
 			}}
 		}
 		res["app"] = app
+		e.wakers.mu.Lock()
+		e.wakers.noteAppBoardTurnLocked(a.ID, nativeContactFence{
+			created: target.incarnation, session: target.session, thread: target.thread,
+			queueEpoch: target.queueEpoch, commandEpoch: target.commandEpoch,
+		}, app.TurnActivity)
+		e.wakers.mu.Unlock()
 		return res
 	})
 }
@@ -80,7 +88,7 @@ func (e *Engine) wakeDiagnosticTarget(l *core.Agent) wakeDiagnosticTarget {
 	x := wakeDiagnosticTarget{owner: l.ID, incarnation: l.CreatedSerial, session: wakeSessionOf(l), thread: threadIDOf(l)}
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	x.commandEpoch = e.wakers.queueEpoch
+	x.queueEpoch, x.commandEpoch = e.wakers.queueEpoch, e.commandEpoch[l.ID]
 	x.antigravity = e.antigravityBinding(l)
 	if x.thread == "" || !e.queueWakeEligible(l) {
 		return x

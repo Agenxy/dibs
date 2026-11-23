@@ -101,7 +101,7 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 func TestBoardFallsBackToTextBoardWithoutAPanel(t *testing.T) {
 	res := core.Result{
 		"board": core.Result{"agents": []core.Result{
-			{"id": "reviewer", "status": "active", "slots": []core.Result{
+			{"id": "reviewer", "status": "active", "turn": "between_turns", "slots": []core.Result{
 				{"text": "reviewing the release surface"},
 			}},
 			{"id": "builder", "status": "dormant"},
@@ -110,7 +110,10 @@ func TestBoardFallsBackToTextBoardWithoutAPanel(t *testing.T) {
 	}
 
 	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
-	for _, want := range []string{"reviewer", "active", "reviewing the release surface", "builder", "dormant"} {
+	for _, want := range []string{
+		"reviewer", "reviewing the release surface", "builder", "dormant",
+		"1 active registration", "0 in turn", "1 between turns", "1 with unknown turn state",
+	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no-panel board %q is missing %q: the agent cannot show what the board says", text, want)
 		}

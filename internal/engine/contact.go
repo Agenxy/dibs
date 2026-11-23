@@ -85,4 +85,5 @@ func (e *Engine) trimContactEvidence(now time.Time) {
 			delete(e.contact, id)
 		}
 	}
+	e.trimBoardTurns()
 }

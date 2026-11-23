@@ -67,6 +67,11 @@ func (e *Engine) noteQueueObservation(plan wakePlan, agent string, observation w
 		return
 	}
 	e.wakers.queueObserved[agent] = queueWakeRecord{plan.thread, plan.createdSerial, observation}
+	// This observation preceded admission. When admission added a new input,
+	// only a later observation can describe what the app did with that input.
+	if observation.Admission == "retained" || observation.Admission == "deferred" {
+		e.wakers.noteAppBoardTurnLocked(agent, plan.nativeContactFence(), observation.TurnActivity)
+	}
 }
 
 // No I/O at board or send time. This is the last adapter observation, with its

@@ -153,29 +153,23 @@ const Board = (() => {
    * half.
    *
    * Buckets, not a continuous value, because they are what actually differ to
-   * a person watching: something is happening RIGHT NOW / this is a working
-   * agent / this one has gone quiet but has not timed out. The thresholds line
-   * up with how the age string itself reads, so the mark and the number can
-   * never disagree.
+   * a person watching: immediate, recent, or aging contact. The thresholds
+   * line up with the age shown beside the row.
    */
   function recency(iso) {
     if (!iso) return "unknown"
     const s = (Date.now() - new Date(iso).getTime()) / 1000
     if (!isFinite(s) || s < 0) return "unknown"
-    if (s < 20) return "immediate"   // mid-exchange: the age still reads "now"
-    if (s < 300) return "recent"     // working: minutes, single digits
+    if (s < 20) return "immediate"
+    if (s < 300) return "recent"
     return "aging"                   // quiet, but not yet stale
   }
 
   /**
    * The cadence trace: when this agent actually did something, drawn discretely.
    *
-   * The board says what an agent IS, active, dormant, out of touch, and that
-   * is a state, checked against a timeout. It never showed the shape of the
-   * work, and the shape is what a person actually reads a fleet by: steady
-   * rhythm, a burst then nothing, or an agent that claims to be active and has
-   * not moved in eight minutes. The last of those is a stalled agent, and until
-   * now it looked exactly like a healthy one between turns.
+   * Registration and reachability are checked against a timeout. The trace
+   * shows the cadence of coordination events.
    *
    * Discrete marks, NOT a smoothed sparkline. Coordination events are discrete
    *, a claim, a message, an acknowledgement, and drawing them as a continuous
@@ -249,6 +243,15 @@ const Board = (() => {
   // The head sits OUTSIDE the summary deliberately. It carries explainer marks
   // that are themselves buttons, and inside a summary every one of those
   // presses would also toggle the row.
+  function turnHTML(l) {
+    if (!l.turn) return ""
+    const label = l.turn === "in_turn" ? "In turn" : l.turn === "between_turns" ? "Between turns" : "Turn unknown"
+    const age = ago(l.turn_observed_at)
+    const why = label === "Turn unknown" ? "No evidence of turn state." :
+      !age ? "Observation time unknown." : age === "now" ? "Observed in the last minute." : `Observed ${age} ago.`
+    return explained("tag turn", label, why)
+  }
+
   function laneHTML(l, { selfId = null, events = null, expanded = null, mergeActions = null, pinned = false } = {}) {
     const st = l.status || "dormant"
     const self = selfId != null && l.id === selfId
@@ -299,7 +302,8 @@ const Board = (() => {
         <div class="entry-head">
           <span class="pip"></span>
           <span class="name">${esc(l.name || l.display_name || l.id)}</span>
-          ${self ? `<span class="tag self">${pinned ? "You" : "This agent"}</span>` : ""}${pinned ? `<span class="tag self-status">${esc(st)}</span>` : ""}
+          ${self ? `<span class="tag self">${pinned ? "You" : "This agent"}</span>` : ""}${pinned ? `<span class="tag self-status">${esc(st === "active" ? "Registered" : st)}</span>` : ""}
+          ${turnHTML(l)}
           ${agentBadges(l)}
           ${staleReasonHTML(l)}
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>
@@ -328,13 +332,7 @@ const Board = (() => {
   // Grouped by COORDINATION STATE. At fifteen agents an ungrouped list buries
   // the two that matter under thirteen that do not.
   //
-  // The labels used to say "Working" and "Idle", which are claims about what an
-  // agent is DOING, and the grouping is on status, which is a claim about
-  // whether it is talking to Dibs. An active agent that has declared nothing
-  // was labelled "Working"; a dormant standing reviewer, exactly where it is
-  // meant to be between activations, was labelled "Idle" as though something
-  // were wrong. Dibs knows an agent has spoken. It does not know what it is
-  // doing, and this board must not say otherwise (SPEC §7).
+  // The group labels describe registration and reachability (SPEC §7).
   // Search only fields already available to this reader. Never stringify a
   // whole private carrier (which can include credentials or hidden metadata).
   function matches(query, ...values) {
@@ -357,7 +355,7 @@ const Board = (() => {
       (Date.parse(b.last_coordination_at) || 0) - (Date.parse(a.last_coordination_at) || 0) || a.id.localeCompare(b.id)
     const groups = [
       ["gone", "Out of touch", filtered.filter((l) => l.status === "stale")],
-      ["working", "Active", filtered.filter((l) => l.status === "active")],
+      ["working", "Active registrations", filtered.filter((l) => l.status === "active")],
       ["idle", "Dormant", filtered.filter((l) => l.status === "dormant")],
       ["other", "Other", filtered.filter((l) => !["active", "dormant", "stale"].includes(l.status))],
     ]
@@ -760,7 +758,7 @@ const Board = (() => {
     return out
   }
 
-  // Who in this agent is actually working.
+  // Which space members Dibs can reach.
   //
   // An agent's member list is the answer to "who is on this", and rendering a
   // corpse identically to a live agent makes it the wrong answer. Observed: a
@@ -776,7 +774,7 @@ const Board = (() => {
     if (l.status === "unreachable" && l.wake) return explained("member-tag gone", "unreachable", l.wake)
     const why = STALE_WHY[l.stale_reason]
     const label = l.status === "dormant" ? "asleep" : (why ? why[0] : "out of touch")
-    return explained("member-tag gone", label, why ? why[1] : "this member is not currently working")
+    return explained("member-tag gone", label, why ? why[1] : "Dibs has no current contact with this member.")
   }
 
   function channelHTML(ch, { selfId = null, agents = null } = {}) {
