@@ -54,17 +54,31 @@ func TestSameRepoNormalisesPrimaryRemoteAcrossClones(t *testing.T) {
 	runGit(t, git, clones[1], "remote", "set-url", "origin", "https://github.com/agenxy/dibs")
 	runGit(t, git, clones[2], "remote", "set-url", "origin", "ssh://git@github.com/agenxy/dibs.git")
 
+	commandLimit, identityLimit := gitCommandLimit, gitIdentityLimit
+	t.Cleanup(func() { gitCommandLimit, gitIdentityLimit = commandLimit, identityLimit })
+	gitCommandLimit, gitIdentityLimit = 5*time.Second, 20*time.Second
+
+	// Six seconds of controlled delay exceeds the five-second command
+	// budget in aggregate. Each child still has two seconds of headroom
+	// to start and finish on a loaded CI runner.
 	scp := Canonical(clones[0])
+	delayed := 0
 	restore := procexec.ObserveCommandArgs(func(_ string, args []string) {
 		if len(args) > 3 && args[1] == scp && (args[2] == "rev-parse" && args[3] == "--show-toplevel" || args[2] == "config") {
-			<-time.After(600 * time.Millisecond)
+			delayed++
+			<-time.After(3 * time.Second)
 		}
 	})
 	t.Cleanup(restore)
 
+	left := Identify(clones[0])
+	if delayed != 2 {
+		t.Fatalf("setup: delayed %d checkout/config commands, want 2", delayed)
+	}
 	for i := 1; i < len(clones); i++ {
-		if same, known := SameRepo(Identify(clones[0]), Identify(clones[i])); !same || !known {
-			t.Errorf("SameRepo(%q, %q) = (%v, %v), want (true, true)", clones[0], clones[i], same, known)
+		right := Identify(clones[i])
+		if same, known := SameRepo(left, right); !same || !known {
+			t.Errorf("SameRepo(%q, %q) = (%v, %v), want (true, true)\nleft: %+v\nright: %+v", clones[0], clones[i], same, known, left, right)
 		}
 	}
 }
