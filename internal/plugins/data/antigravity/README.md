@@ -11,8 +11,10 @@ The Dibs installer moves an existing `dibs` entry from the desktop profile's
 and the other servers in the profile. Reinstalling preserves the configured
 server. For a fresh install it records the current executable and the selected
 board's bridge settings. `dibs doctor` warns if both paths define the server.
-If Antigravity still shows the old manual entry, restart it to reload the MCP
-configuration.
+Reload the Antigravity session after moving a manual entry into the plugin.
+During a live migration on desktop 2.34.0, the manual `dibs` server disappeared
+before `dibs_dibs` appeared. One wake reached a session with no Dibs tools until
+it reloaded. The board retained the mail.
 
 From a Dibs checkout with no manual `dibs` entry, `agy plugin install
 ./plugins/antigravity` installs the native plugin with `dibs` resolved from
@@ -25,15 +27,17 @@ To allow calls to the Dibs MCP server, run this command as the operator:
 dibs antigravity-plugin --trust
 ```
 
-The command adds the documented `mcp(dibs/*)` wildcard and one `mcp(dibs/<tool>)`
-rule for each tool in your Dibs binary. The per-tool rules are a fallback until
-Antigravity desktop wildcard matching is measured. Run the command again after
-an upgrade to add rules for new tools.
+The command uses `dibs_dibs` for the native plugin and `dibs` for a manual MCP
+entry. It adds the documented `mcp(<server>/*)` wildcard and one
+`mcp(<server>/<tool>)` rule per tool in your Dibs binary for each configured
+server. The per-tool rules are a fallback until desktop wildcard matching is
+measured independently. Run the command again after adding the plugin or
+upgrading Dibs.
 
 The command updates the allow list in `~/.gemini/config/config.json` and
 preserves existing settings and rules. Open Antigravity once to create the
 profile if it is missing. Antigravity gives Deny and Ask rules precedence over
-Allow. `dibs doctor` reports when any Dibs tool is missing an explicit rule.
+Allow. `dibs doctor` reports missing explicit rules for each configured server.
 The [Antigravity MCP documentation](https://antigravity.google/docs/mcp/)
 describes the server-scoped rule.
 
@@ -76,6 +80,7 @@ the mail about 19 seconds after send while Safari stayed frontmost. See the
 On 2026-11-22, `agy` 1.1.10 validated isolated plugin fixtures and `agy` 1.5.14
 installed the Dibs package with the selected board. In that scratch CLI profile,
 the trust command added the documented rule and preserved existing grants.
-The migration kept the plugin's configured server name `dibs` in the plugin
-inventory. Runtime server naming and approval matching on Antigravity desktop
-2.34.0 remain to be measured.
+The CLI inventory lists `dibs`. On Antigravity desktop 2.34.0, the migrated
+plugin appeared as `dibs_dibs` after the session reloaded. `check_in`,
+`read_mail`, and `respond` ran without triggering prompts in that session.
+Which live permission allowed those calls remains unmeasured.
