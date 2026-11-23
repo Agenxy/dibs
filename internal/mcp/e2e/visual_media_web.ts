@@ -319,13 +319,19 @@ async function checkMediaLifetime(page:Page,check:Check,tool:Tool,token:string,
   })
   check("live preview URLs are capped at eight",live<=8,`live=${live}`)
   const released=page.locator('[data-media-state="evicted"] [data-media-load]').first()
-  check("a released image keeps a way to load it again",await released.count()>0)
-  if(await released.count()){
+  const reloadable=await released.count()>0
+  check("a released image keeps a way to load it again",reloadable)
+  if(reloadable){
     const id=await released.locator("..").getAttribute("data-serial")
-    const parent=page.locator(`#message-${id} [data-media-key]`)
-    await released.click()
-    await parent.locator('img[src^="blob:"]').waitFor()
-    check("released image can be loaded again",await parent.getAttribute("data-media-state")==="ready")
+    await page.locator(`#message-${id} [data-media-load]`).click()
+    // Cache maintenance can evict the image between Playwright calls.
+    // Observe the loaded image and its ready state in the same browser turn.
+    const loaded=await page.waitForFunction(id=>{
+      const image=document.querySelector<HTMLImageElement>(
+        `#message-${id} [data-media-state="ready"] img[src^="blob:"]`)
+      return !!image?.checkVisibility()&&image.complete&&image.naturalWidth>0
+    },id)
+    check("released image can be loaded again",await loaded.jsonValue())
   }
   await page.getByRole("searchbox",{name:"Search Dibs"}).fill("a search that removes every media node")
   await page.waitForFunction(()=>document.querySelectorAll("#pane-mail [data-media-key]").length===0)
