@@ -6,13 +6,9 @@ package mcp
 import (
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"testing"
-	"time"
 
 	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/paths"
-	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The server derives WHERE an agent is working, and nothing checked that it did.
@@ -53,17 +49,6 @@ func TestTheServerRecordsWhereAnAgentIsWorking(t *testing.T) {
 	run(main, "remote", "add", "origin", "git@example.com:acme/api.git")
 	linked := filepath.Join(root, "wt1")
 	run(main, "worktree", "add", "-q", linked)
-
-	// Each Git command can finish within its own budget, even when their
-	// combined time exceeds a second. Enter through identity recording.
-	checkout := paths.Canonical(main)
-	restore := procexec.ObserveCommandArgs(func(_ string, args []string) {
-		if len(args) > 2 && args[1] == checkout &&
-			(slices.Contains(args, "--show-toplevel") || slices.Contains(args, "--is-shallow-repository")) {
-			<-time.After(600 * time.Millisecond)
-		}
-	})
-	t.Cleanup(restore)
 
 	var here, there core.AgentInfo
 	resolveLocation(&here, main)

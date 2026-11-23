@@ -95,7 +95,7 @@ func TestIdentifyRetriesAfterEffectiveRemoteProbeTimesOut(t *testing.T) {
 	restore := procexec.ObserveCommandArgs(func(_ string, args []string) {
 		if len(args) > 3 && args[1] == dir && args[2] == "ls-remote" && !stalled {
 			stalled = true
-			<-time.After(1100 * time.Millisecond)
+			<-time.After(gitCommandLimit + 100*time.Millisecond)
 		}
 	})
 	t.Cleanup(restore)

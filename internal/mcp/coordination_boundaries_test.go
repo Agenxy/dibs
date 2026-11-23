@@ -8,7 +8,12 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Coordination must not excuse a separate shared objective or a reference
@@ -25,6 +30,9 @@ func TestCoordinationDoesNotHideUncoveredWorkThroughDeclareMCP(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, scenario := range []string{"mixed-objective", "one-sided-wait", "third-party", "wrong-kind"} {
 			t.Run(version+"/"+scenario, func(t *testing.T) {
+				if version == "2026-07-28" && scenario == "mixed-objective" {
+					delayBoundaryRepositoryProbe(t, repo)
+				}
 				srv, _, _ := aliasReplayServer(t, t.TempDir())
 				lead := boundaryRegisterAt(t, srv, version, "lead", repo)
 				worker := boundaryRegisterAt(t, srv, version, "worker", repo)
@@ -61,6 +69,26 @@ func TestCoordinationDoesNotHideUncoveredWorkThroughDeclareMCP(t *testing.T) {
 			})
 		}
 	}
+}
+
+func delayBoundaryRepositoryProbe(t *testing.T, repo string) {
+	t.Helper()
+	dir := paths.Canonical(repo)
+	var delayed atomic.Bool
+	restore := procexec.ObserveCommandArgs(func(_ string, args []string) {
+		if len(args) > 3 && args[1] == dir && args[2] == "rev-parse" && args[3] == "--show-toplevel" {
+			delayed.Store(true)
+			// Model a subprocess scheduled after the original one-second
+			// command budget. Registration still performs the actual Git call.
+			<-time.After(1200 * time.Millisecond)
+		}
+	})
+	t.Cleanup(func() {
+		restore()
+		if !delayed.Load() {
+			t.Error("setup: the real repository probe was not reached")
+		}
+	})
 }
 
 // A proven mail relationship cannot swallow a separate, unconfirmed tracker

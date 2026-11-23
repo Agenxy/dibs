@@ -24,8 +24,8 @@ const repoIDCacheLimit = 256
 // The subprocess timing fixture scales both budgets to leave scheduling
 // headroom while reproducing an exhausted shared command budget.
 var (
-	gitCommandLimit  = time.Second
-	gitIdentityLimit = 3 * time.Second
+	gitCommandLimit  = 3 * time.Second
+	gitIdentityLimit = 8 * time.Second
 )
 
 // RepoID is the Git identity of one checkout. WorktreeID names the individual
