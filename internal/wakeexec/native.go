@@ -20,12 +20,22 @@ type NativeOutcome struct {
 	Disposition          string
 	TurnID               string
 	Detail               string
+	// NoSocket keeps the unloaded route's app-return policy with no evidence of ownership.
+	NoSocket bool
 	// AppNotListening marks a native_failed outcome whose socket exists and
 	// refused the connection: an app starting, stopping or restarting. A
 	// caller that can see the app's process decides which; one that cannot
 	// (the host bridge) takes the cold route as for any native_failed.
 	AppNotListening bool
 }
+
+// DirectInputUnavailable reports that no app IPC listener could be reached.
+func (out NativeOutcome) DirectInputUnavailable() bool {
+	return out.NoSocket || out.AppNotListening
+}
+
+// QueueOnly is the queue route's delivery label when direct input was unavailable.
+const QueueOnly = "queue_only"
 
 // NativeEligible restricts replacement to the agent's own derived app and
 // the canonical local queue shape. Config/profile overrides keep their route.
@@ -71,6 +81,9 @@ func TryNativeContext(
 		fresh = func() (string, error) { return ComposeNative(f), nil }
 	}
 	r, err := codexipc.DeliverFresh(ctx, f.Thread, fresh)
+	if errors.Is(err, codexipc.ErrNoSocket) {
+		return NativeOutcome{Disposition: "unloaded", NoSocket: true}, false
+	}
 	if errors.Is(err, codexipc.ErrNoOwner) {
 		return NativeOutcome{Disposition: "unloaded"}, false
 	}

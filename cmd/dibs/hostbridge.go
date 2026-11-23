@@ -538,6 +538,11 @@ func commandWakeOutcome(
 		return false, "wake command acceptance unknown after incomplete output; no automatic retry or fallback", outcome
 	}
 	if command.OK {
+		if outcome.DirectInputUnavailable() {
+			outcome.Disposition = wakeexec.QueueOnly
+			return true, "queued in the ChatGPT app. Direct input was unavailable. " +
+				"Queue admission does not confirm a started turn or read mail.", outcome
+		}
 		if outcome.Disposition == "unloaded" {
 			return true, "thread not loaded in the app; queued until opened", outcome
 		}
