@@ -35,7 +35,7 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 
 	content := out["content"].([]map[string]any)
 	text := content[0]["text"].(string)
-	for _, want := range []string{"2 agent(s)", "1 active", "2 unread"} {
+	for _, want := range []string{"2 agent(s)", "1 registered", "2 unknown", "2 unread"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary %q missing %q", text, want)
 		}
@@ -112,7 +112,7 @@ func TestBoardFallsBackToTextBoardWithoutAPanel(t *testing.T) {
 	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
 	for _, want := range []string{
 		"reviewer", "reviewing the release surface", "builder", "dormant",
-		"1 active registration", "0 in turn", "1 between turns", "1 with unknown turn state",
+		"1 registered", "0 in turn", "1 between turns", "1 unknown",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no-panel board %q is missing %q: the agent cannot show what the board says", text, want)

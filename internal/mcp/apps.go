@@ -273,11 +273,10 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 			}
 		}
 	}
-	msg := fmt.Sprintf("Dibs board: %d agents, %d active registrations. "+
-		"%d in turn, %d between turns, %d with unknown turn state",
+	msg := fmt.Sprintf("Dibs board: %d agent(s), %d registered. %d in turn, %d between turns, %d unknown",
 		len(agents), registered, inTurn, between, len(agents)-inTurn-between)
 	if n := inboxCount(sc["inbox"]); n > 0 {
-		msg += fmt.Sprintf("; %d unread message(s)", n)
+		msg += fmt.Sprintf(". %d unread", n)
 	}
 	// The ROWS, not just the count.
 	//
