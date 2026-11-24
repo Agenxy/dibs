@@ -135,7 +135,7 @@ func (p *processPass) readPath(pid int, allowFallback bool) processPath {
 	if !same {
 		return processPath{state: processAbsent}
 	}
-	if err != nil && allowFallback && processPathFallback != nil {
+	if err != nil && allowFallback {
 		procinfo.WarnFallback(procinfo.FallbackPath, pid, err)
 		path, err = processPathFallback(p.ctx, pid)
 		// The command may have raced a second incarnation change.
@@ -156,13 +156,12 @@ func (p *processPass) readPath(pid int, allowFallback bool) processPath {
 	return processPath{state: processPresent, value: path}
 }
 
-// processPathFallback is nil where no command can recover a path the kernel
-// refused. See platformPathFallback.
+// processPathFallback names a process whose executable the kernel refused, so
+// an ancestry walk can continue past it. See platformPathFallback.
 var processPathFallback = platformPathFallback
 
-// psPathFallback asks ps for the executable. On macOS `comm=` is the full
-// executable path; on Linux it is the 15-byte task name, which can never place
-// a process in an app bundle, so Linux has no fallback at all.
+// psPathFallback asks ps for the executable name. On macOS `comm=` is the
+// full executable path.
 func psPathFallback(ctx context.Context, pid int) (string, error) {
 	out, err := appProbeOutput(ctx, "/bin/ps", "-p", strconv.Itoa(pid), "-o", "comm=")
 	if err != nil {
