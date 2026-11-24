@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"debug/buildinfo"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -29,6 +30,15 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	}
 	if testing.Short() {
 		t.Skip("builds and installs both real binaries in an isolated clean clone")
+	}
+	// `task install` is reached through mise, so a machine without it (the
+	// native riscv64 seat, which runs the Go half only) cannot enter this door.
+	// CI and the gate machines always have it, and there it never skips.
+	if _, err := exec.LookPath("mise"); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal("mise is required in CI:", err)
+		}
+		t.Skip("task install runs through mise, which this machine does not have")
 	}
 	ctx, cancel := testexec.BuildContext(t, 4*time.Minute)
 	t.Cleanup(cancel)

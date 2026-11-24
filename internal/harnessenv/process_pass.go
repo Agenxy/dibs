@@ -156,7 +156,13 @@ func (p *processPass) readPath(pid int, allowFallback bool) processPath {
 	return processPath{state: processPresent, value: path}
 }
 
-var processPathFallback = func(ctx context.Context, pid int) (string, error) {
+// processPathFallback names a process whose executable the kernel refused, so
+// an ancestry walk can continue past it. See platformPathFallback.
+var processPathFallback = platformPathFallback
+
+// psPathFallback asks ps for the executable name. On macOS `comm=` is the
+// full executable path.
+func psPathFallback(ctx context.Context, pid int) (string, error) {
 	out, err := appProbeOutput(ctx, "/bin/ps", "-p", strconv.Itoa(pid), "-o", "comm=")
 	if err != nil {
 		return "", err

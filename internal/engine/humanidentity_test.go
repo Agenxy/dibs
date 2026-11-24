@@ -568,3 +568,24 @@ func TestAnArchivedHumansMailboxIsStillTheirs(t *testing.T) {
 		})
 	}
 }
+
+// An OS account named like a system address must not lend the person that
+// address. The first native riscv64 run, on a seat called `dibs`, failed the
+// human-delivery and reconnect-fault tests because the person and Dibs'
+// own notices shared one name. The nonce keeps the raw username so an
+// existing identity recovers exactly as before.
+func TestHumanLabelNeverTakesASystemAddress(t *testing.T) {
+	for osName, want := range map[string]string{
+		"dibs":               core.HumanActor,
+		core.RoleCoordinator: core.HumanActor,
+		"ada":                "ada",
+		"dibs-ops":           "dibs-ops",
+	} {
+		if got := humanLabel(osName); got != want {
+			t.Errorf("humanLabel(%q) = %q, want %q", osName, got, want)
+		}
+	}
+	if humanNonce() != "human:"+humanOSName() {
+		t.Fatalf("nonce moved off the OS name: %q", humanNonce())
+	}
+}
