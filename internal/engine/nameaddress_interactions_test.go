@@ -44,10 +44,14 @@ func TestNameAddressingPreservesReplayedHumanAndCoordinatorRoles(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go first.Run(ctx)
-	human, _, err := first.HumanAgent(ctx)
+	human, firstHumanToken, err := first.HumanAgent(ctx)
 	if err != nil || human == "" {
 		t.Fatal("setup: human:", err)
 	}
+	// The person's label comes from the OS account and is itself "human" on
+	// a machine whose account is a system address (a Linux `dibs` user).
+	// Give the row a neutral label so the impostor can take "human" anywhere.
+	rename(t, first, ctx, firstHumanToken, "the-person")
 	_, humanImpostor := regFor(t, first, ctx, "human-impostor")
 	rename(t, first, ctx, humanImpostor, "human")
 	_, roleImpostor := regFor(t, first, ctx, "role-impostor")
