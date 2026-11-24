@@ -44,16 +44,18 @@ func TestNameAddressingPreservesReplayedHumanAndCoordinatorRoles(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go first.Run(ctx)
-	human, firstHumanToken, err := first.HumanAgent(ctx)
+	human, _, err := first.HumanAgent(ctx)
 	if err != nil || human == "" {
 		t.Fatal("setup: human:", err)
 	}
-	// The person's label comes from the OS account and is itself "human" on
-	// a machine whose account is a system address (a Linux `dibs` user).
-	// Give the row a neutral label so the impostor can take "human" anywhere.
-	rename(t, first, ctx, firstHumanToken, "the-person")
-	_, humanImpostor := regFor(t, first, ctx, "human-impostor")
-	rename(t, first, ctx, humanImpostor, "human")
+	// The person's label comes from the OS account. Where that account is a
+	// system address (a Linux `dibs` user) the person's immutable id is
+	// "human" itself, and no impostor can take the name at all, which is the
+	// protection this test exists for. Elsewhere, build the impostor.
+	if human != core.HumanActor {
+		_, humanImpostor := regFor(t, first, ctx, "human-impostor")
+		rename(t, first, ctx, humanImpostor, "human")
+	}
 	_, roleImpostor := regFor(t, first, ctx, "role-impostor")
 	rename(t, first, ctx, roleImpostor, "coordinator")
 	leader, leaderToken := regFor(t, first, ctx, "leader")
