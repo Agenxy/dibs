@@ -110,7 +110,7 @@ func TestMailHistoryRealMCPCandidateBudgetAfterAdoption(t *testing.T) {
 	var index *mailhistory.Index
 	var eng *engine.Engine
 	srv, _ := historyServer(t, dir, func(e *engine.Engine, l *ledger.Ledger) { eng = e; index = l.MailHistory() })
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()

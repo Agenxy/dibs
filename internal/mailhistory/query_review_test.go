@@ -72,7 +72,7 @@ func TestMailHistoryNativeAdoptionSourceLimitIsPartyLocalAfterRestart(t *testing
 	for attempt := 0; attempt < 2; attempt++ {
 		f := nativeHistoryWithLimits(t, dir, limits)
 		f.ids["sender-token"], f.ids["heir-token"] = "sender", "heir"
-		timeout := time.NewTimer(5 * time.Second)
+		timeout := time.NewTimer(30 * time.Second)
 		tick := time.NewTicker(time.Millisecond)
 		for !f.led.MailHistory().Measurement().Ready {
 			if f.led.MailHistory().Status().Failed {

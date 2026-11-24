@@ -158,7 +158,7 @@ func (e *Engine) rowForNonce(nonce string) string {
 // humanNonce is the recovery credential the human's agent is registered with.
 // One place, because HumanAgent writes it and HumanIdentity reads it, and a
 // second spelling would make the human two different people.
-func humanNonce() string { return "human:" + humanName() }
+func humanNonce() string { return "human:" + humanOSName() }
 
 // HumanAgent returns the human's AGENT id and token, creating it on first use.
 //
@@ -383,11 +383,29 @@ func (e *Engine) HumanTouch(ctx context.Context) {
 	})
 }
 
-// humanName supplies the initial label and reserved nonce's OS identity.
-// The display label may change; the nonce remains tied to the OS username.
+// humanName supplies the initial label. The display label may change later.
 // The OS username is the default because an agent reading
 // "ada asked you to stop" learns something, and "human-1" does not.
-func humanName() string {
+func humanName() string { return humanLabel(humanOSName()) }
+
+// humanLabel refuses an OS username that is already a system address. A
+// Linux board run by a dedicated `dibs` account, which is the setup we
+// recommend there, named the person "dibs": the same address Dibs' own
+// notices come from, so delivery-failure reports and reconnect faults
+// addressed to the person were indistinguishable from Dibs talking to
+// itself. Found on the first native riscv64 run, on a K3 seat called dibs.
+func humanLabel(osName string) string {
+	switch osName {
+	case dibsName, core.RoleCoordinator:
+		return core.HumanActor
+	}
+	return osName
+}
+
+// humanOSName is the OS identity the recovery nonce is tied to. It stays the
+// raw username, even where humanLabel substitutes, so an existing identity
+// keeps recovering exactly as before.
+func humanOSName() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		return sanitiseName(u.Username)
 	}
