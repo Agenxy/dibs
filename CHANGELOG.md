@@ -52,6 +52,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux, idle observation reads a process name from `/proc` when an
   ancestor's executable is unreadable, instead of starting `ps` for each
   root-owned ancestor on every sweep.
+- Claude plugin currency compares the loaded plugin to the manifest this
+  build actually ships, as doctor and the daemon already do. A source daemon
+  ahead of that release stamp no longer asks every session to install an
+  identical plugin; genuinely older plugin releases still receive advice.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.

@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/agenxy/dibs/internal/plugins"
 )
 
 // hookPoll is `dibs hook-poll`: the wake path for a harness whose hooks are
@@ -95,7 +93,7 @@ func sessionStartPoll(args []string) func(string, map[string]any, any) error {
 		if *result == nil {
 			*result = map[string]any{}
 		}
-		if info, ok := olderClient("claude_plugin", claudePluginVersion(), daemonBuild, plugins.ClaudeUpdate); ok {
+		if info, ok := olderClaudePlugin(daemonBuild); ok {
 			addVersionHookContext(*result, clientVersionNotice{DaemonBuild: daemonBuild, Clients: []behindClient{info}})
 		}
 		return nil
