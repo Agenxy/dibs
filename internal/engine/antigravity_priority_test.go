@@ -6,10 +6,11 @@ package engine
 import (
 	"context"
 	"errors"
-	"github.com/agenxy/dibs/internal/antigravity"
-	"github.com/agenxy/dibs/internal/core"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/antigravity"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 func TestRefusedAntigravityNotifyUsesContactEligibility(t *testing.T) {
@@ -27,8 +28,10 @@ func TestRefusedAntigravityNotifyUsesContactEligibility(t *testing.T) {
 			go e.Run(ctx)
 			t.Cleanup(func() { cancel(); <-e.Done() })
 			const conversation = "01a10520-0000-7000-8000-000000000097"
-			worker := contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRegister, Name: "worker", AgentKind: core.KindPersistent, SessionAlias: conversation,
-				Agent: &core.AgentInfo{Harness: antigravity.Client, HostID: e.HostID()}})["token"].(string)
+			worker := contactReplayDo(t, e, ctx, &core.Op{
+				Kind: core.OpRegister, Name: "worker", AgentKind: core.KindPersistent, SessionAlias: conversation,
+				Agent: &core.AgentInfo{Harness: antigravity.Client, HostID: e.HostID()},
+			})["token"].(string)
 			e.BindAntigravity(ctx, worker, conversation)
 			sender := registerAgent(t, e, "sender")
 			sleepAntigravitySendRecipient(t, e, ctx)
