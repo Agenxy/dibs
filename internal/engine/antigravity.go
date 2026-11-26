@@ -137,7 +137,8 @@ func (e *Engine) runAntigravityWake(plan *wakePlan, agent string) bool {
 		plan.commandOutcome.NoRetry = true
 		plan.nativeOutcome = &wakeexec.NativeOutcome{Disposition: "not_sent"}
 		slog.Warn("Antigravity wake refused before submission", "agent", agent, "err", err,
-			"hint", "verify the conversation and workspace in the running Antigravity app")
+			"hint", err.Error())
+		e.contactAntigravityRefusal(*plan, agent)
 		return false
 	}
 	res, err := e.query(ctx, func() core.Result {
@@ -162,4 +163,33 @@ func (e *Engine) runAntigravityWake(plan *wakePlan, agent string) bool {
 	plan.commandOutcome = wakeexec.CommandOutcome{OK: true}
 	slog.Info("Antigravity app accepted a wake notice", "agent", agent)
 	return true
+}
+
+// A configured route is not a reachable route after its actual preflight
+// refused. Record contact through the ordinary replayable op, but only for
+// still-unread mail covered by this exact activation's attempt. A read, move,
+// withdrawal or binding replacement during preflight must settle it instead.
+func (e *Engine) contactAntigravityRefusal(plan wakePlan, agent string) {
+	_, _ = e.query(e.deliveryContext(), func() core.Result {
+		l := e.state.Agents[agent]
+		if e.antigravityBinding(l) != plan.antigravity || l.CurrentSession != plan.thread ||
+			cwdOf(l) != plan.cwd || !e.originalNativeWakeOwed(plan, agent) {
+			return nil
+		}
+		items := map[uint64]time.Time{}
+		now := time.Now()
+		e.captureAcceptedMail(items, plan.commandKeys, l, now)
+		for _, m := range e.state.Inbox(agent) {
+			if _, covered := items[m.Serial]; !covered || m.ContactEscalatedAt != 0 {
+				continue
+			}
+			op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
+			if e.state.Admit(op) == nil {
+				if _, err := e.applyAndLedger(op, now); err != nil {
+					slog.Error("could not record Antigravity refusal contact", "agent", agent, "err", err)
+				}
+			}
+		}
+		return nil
+	})
 }
