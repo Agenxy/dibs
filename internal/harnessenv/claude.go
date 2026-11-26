@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 	"time"
 
@@ -49,6 +50,22 @@ func claudeSupportDir() string {
 // when the app has no record of it (a terminal session, say) or it is archived.
 func ClaudeLocalSession(cliSession string) string {
 	return ClaudeAppSession("", cliSession)
+}
+
+// ClaudeHostSession resolves a CLI identity through the sidecar written by
+// Claude Code. Conflicting sidecars establish no app session.
+func ClaudeHostSession(known ...string) string {
+	local := ""
+	for s := range claudeSessionSidecars {
+		if !localSessionID.MatchString(s.HostSessionID) || !slices.Contains(known, s.SessionID) {
+			continue
+		}
+		if local != "" && local != s.HostSessionID {
+			return ""
+		}
+		local = s.HostSessionID
+	}
+	return local
 }
 
 // IsClaudeAppSession reports whether s has the shape of the app's own session
@@ -223,9 +240,24 @@ func ClaudeOpenArgv(local string) []string {
 // ClaudeSessionRunning reports whether a Claude Code session's process is
 // alive, from the session files Claude Code writes under ~/.claude/sessions.
 func ClaudeSessionRunning(cliSession string) bool {
+	for s := range claudeSessionSidecars {
+		if s.SessionID == cliSession && s.PID > 0 && processAlive.Alive(s.PID) {
+			return true
+		}
+	}
+	return false
+}
+
+type claudeSessionSidecar struct {
+	PID           int    `json:"pid"`
+	SessionID     string `json:"sessionId"`
+	HostSessionID string `json:"hostSessionId"`
+}
+
+func claudeSessionSidecars(yield func(claudeSessionSidecar) bool) {
 	home, err := os.UserHomeDir()
-	if err != nil || cliSession == "" {
-		return false
+	if err != nil {
+		return
 	}
 	files, _ := filepath.Glob(filepath.Join(home, ".claude", "sessions", "*.json"))
 	for _, f := range files {
@@ -233,16 +265,9 @@ func ClaudeSessionRunning(cliSession string) bool {
 		if err != nil {
 			continue
 		}
-		var s struct {
-			PID       int    `json:"pid"`
-			SessionID string `json:"sessionId"`
-		}
-		if json.Unmarshal(raw, &s) != nil || s.SessionID != cliSession || s.PID <= 0 {
-			continue
-		}
-		if processAlive.Alive(s.PID) {
-			return true
+		var s claudeSessionSidecar
+		if json.Unmarshal(raw, &s) == nil && s.SessionID != "" && !yield(s) {
+			return
 		}
 	}
-	return false
 }

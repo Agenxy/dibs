@@ -123,6 +123,7 @@ func (e *Engine) appReconnectTargets(host string, app harnessenv.AppIncarnation,
 		e.wakers.mu.Lock()
 		delete(e.wakers.queued, id)
 		delete(e.wakers.queuedPrompt, id)
+		delete(e.wakers.queuedMail, id)
 		e.wakers.mu.Unlock()
 		targets = append(targets, reconnectTarget{id, agent.CreatedSerial, thread})
 	}

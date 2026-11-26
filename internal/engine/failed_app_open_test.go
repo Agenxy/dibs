@@ -457,14 +457,14 @@ func awaitQueuedContactProbe(t *testing.T, e *Engine) {
 	}
 }
 
-// No opener is attempted for an ended Claude session, so no failed-open
-// contact or sender notice may be manufactured. The pending request stays stored.
+// An unavailable route warrants contact without inventing a failed open or a
+// receipt when the notification route never posted. The request stays stored.
 func TestEndedClaudeWaitDoesNotInventAnOpenFailureForSender(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := newReopenContactFixture(t)
 		sent := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: core.MsgRequest, Body: "PRIVATE-CLAUDE-ASK"})
 		serial := sent["msg_serial"].(uint64)
-		synctest.Sleep(time.Second)
+		synctest.Sleep(7 * time.Second)
 		synctest.Wait()
 		got, err := f.e.query(f.ctx, func() core.Result {
 			m := f.e.state.Messages[serial]
@@ -476,7 +476,8 @@ func TestEndedClaudeWaitDoesNotInventAnOpenFailureForSender(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got["contact"] != uint64(0) || got["retained"] != true || got["reason"] != "waiting-thread-open" {
+		if got["contact"] == uint64(0) || got["retained"] != true || got["reason"] != "waiting-thread-open" ||
+			!strings.Contains(got["news"].(string), "posting failed") || strings.Contains(got["news"].(string), "open failed") {
 			t.Fatalf("ended-session wait dropped mail or invented an open failure: %v", got)
 		}
 		if strings.Contains(got["news"].(string), "PRIVATE-CLAUDE-ASK") {

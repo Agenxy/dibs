@@ -41,14 +41,17 @@ type contactLinkPlan struct {
 	local, knownHost               bool
 	recovery                       bool
 	host, surface, harness, thread string
+	appSession                     string
 }
 
 // contactNotice runs on the writer and snapshots only daemon-controlled
 // metadata. Filesystem lookup for an app deep link happens later, off-loop.
 func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactLinkPlan) {
 	name, sender, kind := e.agentName(c.Recipient), "an agent", "message"
+	priority := ""
 	if m := e.state.Messages[c.OldestSerial]; m != nil {
 		sender, kind = e.agentName(m.From), m.Type
+		priority = m.EffectivePriority()
 	}
 	if name == "" {
 		name = c.Recipient
@@ -64,6 +67,9 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 		if l.Agent != nil && plan.surface == surfaceOf(l) {
 			plan.harness = l.Agent.Harness
 		}
+		if alert, ok := e.closedClaudeBinding(l); ok {
+			plan.appSession = alert.appSession
+		}
 	}
 	if plan.local {
 		plan.host, plan.knownHost = e.HostID(), true
@@ -76,7 +82,7 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 		hint = reason + " " + hint
 	}
 	n := HumanNotice{
-		Serial: c.Serial, Type: "contact", Node: e.state.NodeID,
+		Serial: c.Serial, Type: "contact", Node: e.state.NodeID, Priority: priority,
 		Contact: &humanask.Contact{
 			Recipient: name, Sender: sender, Kind: kind, MailboxFull: c.MailboxFull,
 			Message: c.OldestSerial, Count: c.Count,
@@ -96,7 +102,17 @@ func enrichContactURL(n *HumanNotice, plan contactLinkPlan) {
 	case harnessenv.ChatGPTApp:
 		argv = harnessenv.ChatGPTOpenArgv(plan.thread)
 	case harnessenv.ClaudeDesktop:
-		argv = harnessenv.ClaudeOpenArgv(harnessenv.ClaudeLocalSession(plan.thread))
+		local := plan.appSession
+		if local == "" {
+			local = harnessenv.ClaudeHostSession(plan.thread)
+		}
+		if local == "" {
+			local = harnessenv.ClaudeLocalSession(plan.thread)
+		}
+		argv = harnessenv.ClaudeOpenArgv(local)
+		if len(argv) > 0 {
+			n.Contact.OpenHint = "delivery unconfirmed; open " + n.Contact.Recipient + " in Claude Desktop, session " + local
+		}
 	}
 	if len(argv) >= 2 && argv[0] == "/usr/bin/open" {
 		n.Contact.OpenURL = argv[len(argv)-1]
@@ -127,14 +143,26 @@ func (e *Engine) startContactDelivery(serial uint64) {
 	}
 	rec.count++
 	rec.armed = false
+	rec.urgent = nil
+	if c := e.state.Contacts[serial]; c != nil && !highPriorityContact(e.state.Messages[c.OldestSerial]) {
+		rec.urgent = make(chan struct{})
+	}
 	e.contactAttempts[serial] = rec
+	ctx := e.deliveryContext()
 	go func() {
 		// A recipient that reads or answers immediately needs no human to open
 		// it. Snapshot after the settle window so a burst's final count reaches
 		// the one alert, rather than the first message's count.
-		timer := time.NewTimer(contactSettleDelay)
-		defer timer.Stop()
-		<-timer.C
+		if rec.urgent != nil {
+			timer := time.NewTimer(contactSettleDelay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-rec.urgent:
+			case <-ctx.Done():
+				return
+			}
+		}
 		n, plan, ok := e.contactSnapshot(serial)
 		if !ok {
 			return
@@ -144,6 +172,14 @@ func (e *Engine) startContactDelivery(serial uint64) {
 			e.deliverContactNotice(n)
 		}
 	}()
+}
+
+func highPriorityContact(m *core.Message) bool {
+	if m == nil {
+		return false
+	}
+	priority := m.EffectivePriority()
+	return priority == "high" || priority == "urgent"
 }
 
 func (e *Engine) contactSnapshot(serial uint64) (HumanNotice, contactLinkPlan, bool) {
@@ -244,8 +280,40 @@ func (e *Engine) contactPostedDecision(serial uint64, now time.Time) {
 	if err := e.state.Admit(op); err != nil {
 		return
 	}
-	if _, err := e.applyAndLedger(op, now); err != nil {
+	res, err := e.applyAndLedger(op, now)
+	if err != nil {
 		slog.Error("could not ledger a posted contact receipt", "contact", serial, "err", err)
+		return
+	}
+	if res["deduplicated"] == true {
+		return
+	}
+	c := e.state.Contacts[serial]
+	e.notifyClaudeContactSenders(c, now)
+}
+
+func (e *Engine) contactPostingState(c *core.ContactEscalation) string {
+	if !c.ResolvedAt.IsZero() {
+		return "resolved"
+	}
+	if !c.NotifiedAt.IsZero() {
+		return "posted"
+	}
+	if e.contactAttempts[c.Serial].failure != "" {
+		return "failed"
+	}
+	return "pending"
+}
+
+func (e *Engine) notifyClaudeContactSenders(c *core.ContactEscalation, now time.Time) {
+	l := e.state.Agents[c.Recipient]
+	if l == nil || surfaceOf(l) != harnessenv.ClaudeDesktop || c.Reason != core.ContactClaudeUnavailable {
+		return
+	}
+	for _, m := range e.state.Inbox(l.ID) {
+		if m.ContactEscalatedAt == c.Serial && e.notifyAppOpenSender(l, m, "delivery to the original app is unconfirmed", now) {
+			e.wakeAppContactSender(m, now)
+		}
 	}
 }
 
@@ -272,11 +340,6 @@ func (e *Engine) deferContactForLiveTurn(l *core.Agent) bool {
 	return !e.hasWakeRoute(l) && e.contactLooksLive(l)
 }
 
-func (e *Engine) contactRouteMissingAfterRetry(l *core.Agent) bool {
-	return !e.hasWakeRoute(l) &&
-		(surfaceOf(l) != harnessenv.ClaudeDesktop || threadIDOf(l) == "")
-}
-
 func (e *Engine) contactRouteMissingNow(l *core.Agent) bool {
 	return !e.hasWakeRoute(l) && !e.socketMayHaveAppeared(l)
 }
@@ -293,17 +356,39 @@ func (e *Engine) escalateContact(agent string) {
 		e.hasWakeRoute(l) || e.recentlyInTouch(l) || e.contactLooksLive(l) {
 		return
 	}
+	alert, closedClaude := e.closedClaudeBinding(l)
 	for _, m := range e.state.Inbox(agent) {
 		if m.State != core.MsgStatePending || m.ContactEscalatedAt != 0 || !m.ContactEligible() {
 			continue
 		}
 		op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
+		if closedClaude {
+			op.Kind, op.ContactReason, op.AgentID = core.OpContactDiagnosed, core.ContactClaudeUnavailable, l.ID
+		}
 		if err := e.state.Admit(op); err != nil {
 			slog.Debug("contact escalation is no longer eligible", "agent", agent, "msg", m.Serial, "err", err)
 			continue
 		}
-		if _, err := e.applyAndLedger(op, time.Now()); err != nil {
+		now := time.Now()
+		if _, err := e.applyAndLedger(op, now); err != nil {
 			slog.Error("could not record contact escalation", "agent", agent, "msg", m.Serial, "err", err)
+			continue
+		}
+		if highPriorityContact(m) {
+			if rec := e.contactAttempts[m.ContactEscalatedAt]; rec.urgent != nil {
+				close(rec.urgent)
+				rec.urgent = nil
+				e.contactAttempts[m.ContactEscalatedAt] = rec
+			}
+		}
+		if closedClaude {
+			slog.Info("Claude Desktop wake unavailable; human contact recorded", "agent", agent,
+				"app_session", alert.appSession, "cli_session", alert.thread, "sender", m.From,
+				"msg", m.Serial, "contact", m.ContactEscalatedAt)
+			if c := e.state.Contacts[m.ContactEscalatedAt]; c != nil && !c.NotifiedAt.IsZero() &&
+				e.notifyAppOpenSender(l, m, "delivery to the original app is unconfirmed", now) {
+				e.wakeAppContactSender(m, now)
+			}
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 type appBindingAlert struct {
 	created                       uint64
 	thread, host, surface, reason string
+	appSession                    string
 	evidence                      time.Time
 }
 

@@ -380,6 +380,26 @@ listener in this traced path. No independent daemon-callable address was
 established. This does not prove that none exists elsewhere; no unverified
 endpoint is called and no session identity is impersonated.
 
+The 2026-11-26 bundle inspection of Claude Desktop **7.37095.0**
+(`app.asar` SHA-256
+`1aecd6372cd9ab573dab864bf19b03a2c3d6228d0d80dc2d34e55b1df863ce`)
+followed `InternalMcpServerManager.createProxyServers` to `type: "sdk"`
+descriptors in `index.chunk-B7Bx_muK.js`. `index.chunk-Blr25k0l.js`
+routes `mcp_message` over the existing CLI stream. The transport calls a
+callback from `send`; `start` is a no-op. The main app bundle routes the
+Code continue link to its renderer and explicitly shows and focuses the
+window when handling an open URL. Its Electron IPC handler checks the
+sender frame. This static inspection established no independently
+callable cold-input listener on those paths. No live input was sent.
+
+When Dibs can reach neither the current Claude Desktop session socket
+nor another configured background route, an open request or question
+triggers a metadata-only contact alert. High-priority mail skips the alert
+settle delay. The Claude CLI sidecar's `hostSessionId` maps the CLI identity
+to the app session used in the human's link. Dibs distinguishes recording
+an alert from the notification system accepting it. The sender receives
+the posting confirmation when that receipt arrives.
+
 The process budget is another observed boundary. A read of Claude
 **2.26454.2** (`app.asar` SHA-256
 `e9628d73410e4771ae5e9ac509ea20e61e8eb312f18a8fc10c222f9b094f9787`)

@@ -37,6 +37,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- An unreachable Claude Desktop session now triggers a contact alert for
+  unread requests and questions. Wake diagnostics report the unavailable
+  route and the alert's posting state. When Dibs can resolve the app session,
+  the sender gets its link and the confirmed posting outcome.
+- A Codex queue notice followed by an observed prompt and Stop leaves
+  unread requests eligible for the next actionable delivery event. The
+  ordinary queue admission check still prevents duplicate pending input.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.

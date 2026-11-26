@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,8 +26,9 @@ func (e *Engine) freshCommandKeys(agent string, now time.Time) []string {
 	return keys
 }
 
-func (e *Engine) recordCommandWritten(cmd wakePlan) {
-	if len(cmd.commandKeys) == 0 {
+func (e *Engine) recordCommandWritten(cmd wakePlan, started time.Time) {
+	queued := cmd.queuedDelivery()
+	if len(cmd.commandKeys) == 0 && !queued {
 		return
 	}
 	_, _ = e.query(e.wakeContext, func() core.Result {
@@ -38,12 +40,16 @@ func (e *Engine) recordCommandWritten(cmd wakePlan) {
 		if e.commandWritten == nil {
 			e.commandWritten = map[string]bool{}
 		}
+		var unread []uint64
 		for _, key := range cmd.commandKeys {
 			e.commandWritten[key] = true
 			kind, item, _ := strings.Cut(key, ":")
 			who, raw, _ := strings.Cut(item, "\x00")
 			serial, _ := strconv.ParseUint(raw, 10, 64)
 			m := e.state.Messages[serial]
+			if queued && kind == "mail" && who == l.ID && unreadContactAsk(m) && e.mailBelongsTo(m, l) {
+				unread = append(unread, serial)
+			}
 			// The command may finish after a hook or authenticated read has
 			// already presented this FYI. Its delayed metadata receipt adds
 			// nothing then; do not rewrite coordination state on reconnect.
@@ -52,6 +58,9 @@ func (e *Engine) recordCommandWritten(cmd wakePlan) {
 					return core.Result{"error": err}
 				}
 			}
+		}
+		if queued {
+			e.noteQueuedMailOffer(cmd, started, unread)
 		}
 		return nil
 	})
@@ -92,6 +101,18 @@ func (e *Engine) pruneCommandEpochs() {
 
 func (e *Engine) pruneCommandWritten(live map[string]bool) {
 	e.pruneCommandEpochs()
+	e.wakers.mu.Lock()
+	for agent, offer := range e.wakers.queuedMail {
+		offer.serials = slices.DeleteFunc(offer.serials, func(serial uint64) bool {
+			return !unreadContactAsk(e.state.Messages[serial]) || !live["mail:"+noticeKey(agent, serial)]
+		})
+		if len(offer.serials) == 0 {
+			delete(e.wakers.queuedMail, agent)
+		} else {
+			e.wakers.queuedMail[agent] = offer
+		}
+	}
+	e.wakers.mu.Unlock()
 	for key := range e.commandWritten {
 		if !live[key] {
 			delete(e.commandWritten, key)

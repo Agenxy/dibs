@@ -119,6 +119,21 @@ func (e *Engine) localWakeDiagnostics(l *core.Agent, target wakeDiagnosticTarget
 	if d, ok := e.currentWakeDiagnostic(target); ok {
 		out["last_attempt"] = d
 	}
+	if alert, ok := e.closedClaudeBinding(l); ok && alert.appSession != "" {
+		out["app_session"] = alert.appSession
+	}
+	var latest *core.ContactEscalation
+	for _, c := range e.state.Contacts {
+		if c.Recipient == l.ID && c.Serial > l.CreatedSerial && (latest == nil || c.Serial > latest.Serial) {
+			latest = c
+		}
+	}
+	if latest != nil {
+		out["contact_escalation"] = core.Result{
+			"contact_serial": latest.Serial, "msg_serial": latest.OldestSerial, "state": e.contactPostingState(latest),
+			"reason": latest.Reason,
+		}
+	}
 	return out
 }
 
@@ -180,11 +195,27 @@ func antigravityDiagnosticOutcome(plan *wakePlan, outcome string) string {
 func (e *Engine) noteWakeDiagnostic(plan *wakePlan, agent string, at time.Time, success bool) {
 	route, outcome := diagnosticWakeResult(plan, success)
 	e.wakers.mu.Lock()
-	defer e.wakers.mu.Unlock()
-	if len(plan.argv) != 0 && plan.queueEpoch != e.wakers.queueEpoch {
+	stale := len(plan.argv) != 0 && plan.queueEpoch != e.wakers.queueEpoch
+	if stale {
+		e.wakers.mu.Unlock()
 		return
 	}
-	if e.wakers.diagnostics[agent].attemptedAt.After(at) {
+	e.storeWakeDiagnosticLocked(agent, wakeDiagnostic{
+		Route: route, Outcome: outcome, ObservedAt: time.Now().UTC(),
+		created: plan.createdSerial, session: plan.session, thread: plan.thread, attemptedAt: at,
+		antigravity: plan.antigravity,
+	})
+	e.wakers.mu.Unlock()
+}
+
+func (e *Engine) storeWakeDiagnostic(agent string, record wakeDiagnostic) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	e.storeWakeDiagnosticLocked(agent, record)
+}
+
+func (e *Engine) storeWakeDiagnosticLocked(agent string, record wakeDiagnostic) {
+	if e.wakers.diagnostics[agent].attemptedAt.After(record.attemptedAt) {
 		return
 	}
 	if e.wakers.diagnostics == nil {
@@ -199,9 +230,5 @@ func (e *Engine) noteWakeDiagnostic(plan *wakePlan, agent string, at time.Time, 
 		}
 		delete(e.wakers.diagnostics, oldest)
 	}
-	e.wakers.diagnostics[agent] = wakeDiagnostic{
-		Route: route, Outcome: outcome, ObservedAt: time.Now().UTC(),
-		created: plan.createdSerial, session: plan.session, thread: plan.thread, attemptedAt: at,
-		antigravity: plan.antigravity,
-	}
+	e.wakers.diagnostics[agent] = record
 }

@@ -63,6 +63,7 @@ type wakers struct {
 	// queuedwake.go.
 	queued        map[string]time.Time
 	queuedPrompt  map[string]time.Time
+	queuedMail    map[string]queuedMailOffer
 	queueObserved map[string]queueWakeRecord
 	diagnostics   map[string]wakeDiagnostic
 	appBoardTurns map[string]appBoardTurn
@@ -133,6 +134,7 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 	}
 	e.wakers.fails = nil         // a changed configuration is what fixing a command looks like
 	e.wakers.queueObserved = nil // observations describe the previous route
+	e.wakers.queuedMail = nil
 	e.wakers.diagnostics = nil
 	e.wakers.appBoardTurns = nil
 	e.wakers.queueEpoch++
@@ -430,10 +432,9 @@ func (e *Engine) retryWakeDecision(agent string) {
 		Data: map[string]any{"msg_type": kind, "from": from},
 	})
 	if !ok {
-		// This retry follows a fresh peer-cache scan. For a terminal or a
-		// remote agent, a continuing route miss is evidence to ask for help.
-		// Claude Desktop's asynchronous app-open path reports its own failure.
-		if e.finishedExecQueueBinding(l) || e.contactRouteMissingAfterRetry(l) {
+		if surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" {
+			e.openClosedSession(l)
+		} else if !e.hasWakeRoute(l) {
 			e.escalateContact(agent)
 		}
 		return
