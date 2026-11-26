@@ -40,6 +40,7 @@ func (e *Engine) recordCommandWritten(cmd wakePlan, started time.Time) {
 		if e.commandWritten == nil {
 			e.commandWritten = map[string]bool{}
 		}
+		e.noteAntigravityAccepted(cmd)
 		unread, err := e.markCommandKeysWritten(cmd.commandKeys, l, queued)
 		if err != nil {
 			return core.Result{"error": err}

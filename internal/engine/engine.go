@@ -99,22 +99,25 @@ type Engine struct {
 	//
 	// Separate from lease contact and retained as lifecycle evidence.
 	// It does not veto delivery of fresh mail.
-	turnEnded          map[string]time.Time
-	socketOffers       map[string]socketOffer
-	socketFailedOffers map[string]socketOffer
-	socketTurns        map[string]socketTurn
-	socketEpochs       map[string]socketEpoch
-	socketFailures     map[string]socketFailure
-	commandEpoch       map[string]string // receiving app incarnation, writer-owned
-	commandWritten     map[string]bool   // per original command item, derived and writer-owned
-	nativeUnknown      map[string]bool   // unconfirmed input in this receiving incarnation
-	socketWritten      map[string]bool   // per original item; not a receiver acceptance receipt
-	writtenPrunedAt    time.Time         // last full prune of the three receipt maps above
-	wakeBursts         map[string]*wakeBurst
-	wakeContext        context.Context
-	noticePresented    map[string]time.Time
-	passivePresented   map[string]passivePresentation // derived, one current session per agent
-	nextSocketOffer    uint64
+	turnEnded               map[string]time.Time
+	socketOffers            map[string]socketOffer
+	socketFailedOffers      map[string]socketOffer
+	socketTurns             map[string]socketTurn
+	socketEpochs            map[string]socketEpoch
+	socketFailures          map[string]socketFailure
+	commandEpoch            map[string]string // receiving app incarnation, writer-owned
+	antigravityAccepted     map[string]antigravityAcceptance
+	antigravityHubEpoch     string
+	antigravityWatchStarted bool
+	commandWritten          map[string]bool // per original command item, derived and writer-owned
+	nativeUnknown           map[string]bool // unconfirmed input in this receiving incarnation
+	socketWritten           map[string]bool // per original item; not a receiver acceptance receipt
+	writtenPrunedAt         time.Time       // last full prune of the three receipt maps above
+	wakeBursts              map[string]*wakeBurst
+	wakeContext             context.Context
+	noticePresented         map[string]time.Time
+	passivePresented        map[string]passivePresentation // derived, one current session per agent
+	nextSocketOffer         uint64
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
 	// later miss in their directory is somebody else's session rather than
 	// theirs. Telemetry for hookhealth.go, same tier as `seen`.

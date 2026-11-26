@@ -52,6 +52,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux, idle observation reads a process name from `/proc` when an
   ancestor's executable is unreadable, instead of starting `ps` for each
   root-owned ancestor on every sweep.
+- Antigravity hub descriptor changes re-offer still-unread mail to bound
+  local conversations. Filesystem events, not a recurring mail timer, drive
+  recovery; already-read, withdrawn and retired work stays settled.
+- A later Antigravity wake raises contact for actionable mail still unread
+  after a prior app acceptance. Acceptance remains admission, not evidence
+  that a turn ran or mail was read.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.
