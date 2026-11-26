@@ -47,8 +47,14 @@ func runLocal(o options) (int, error) {
 		// connection cannot take the gate down with it.
 		{"ssh", o.host, "setsid -f " + remoteBin + " -remote -sha " + sha + " </dev/null >/dev/null 2>&1"},
 	}
-	for _, s := range steps {
+	for i, s := range steps {
 		if err := run(s...); err != nil {
+			if i == 0 {
+				// The seat's key lives in a Supgang vault and is served by an
+				// agent that does not survive a restart of this machine.
+				err = fmt.Errorf("%w; check `ssh %s true`. For the K3 seat, start its key agent: "+
+					"`supgang ssh-agent --socket ~/.k3d/s --key k3-dibs-seat`", err, o.host)
+			}
 			return 2, err
 		}
 	}
