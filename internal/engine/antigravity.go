@@ -176,11 +176,14 @@ func (e *Engine) contactAntigravityRefusal(plan wakePlan, agent string) {
 			cwdOf(l) != plan.cwd || !e.originalNativeWakeOwed(plan, agent) {
 			return nil
 		}
-		items := map[uint64]time.Time{}
+		items := map[string]bool{}
+		for _, key := range plan.commandKeys {
+			items[key] = true
+		}
 		now := time.Now()
-		e.captureAcceptedMail(items, plan.commandKeys, l, now)
 		for _, m := range e.state.Inbox(agent) {
-			if _, covered := items[m.Serial]; !covered || m.ContactEscalatedAt != 0 {
+			if !items["mail:"+noticeKey(agent, m.Serial)] || m.State != core.MsgStatePending || m.Consumed ||
+				!m.ContactEligible() || !e.mailBelongsTo(m, l) || m.ContactEscalatedAt != 0 {
 				continue
 			}
 			op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
