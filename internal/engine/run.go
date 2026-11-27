@@ -30,6 +30,7 @@ func (e *Engine) Run(ctx context.Context) {
 	e.boot(time.Now())
 	e.startHumanPostingRecovery(reconcileContext, time.Now())
 	go e.watchAppRestarts(ctx)
+	e.startAntigravityWatch(ctx)
 	e.requestHumanCleanup(e.humanCleanupAt(time.Now()))
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
 	// Prime the cache before serving.

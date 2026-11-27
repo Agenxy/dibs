@@ -82,6 +82,17 @@ func claudePluginVersion() string {
 	return plugins.ClaudeInstallVersion(home)
 }
 
+// The plugin has its own release stamp. A source daemon's binary version can
+// advance while its shipped plugin still bears the previous release; comparing
+// those two stamps prescribes an update that installs the same bytes forever.
+// Doctor and the daemon use this same shipped manifest as their reference.
+func olderClaudePlugin(daemon string) (behindClient, bool) {
+	if clientdrift.VersionLabel(daemon) == "" || !release.Comparable(daemon) {
+		return behindClient{}, false
+	}
+	return olderClient("claude_plugin", claudePluginVersion(), plugins.ClaudeShippedVersion(), plugins.ClaudeUpdate)
+}
+
 func bridgeVersionNotice(daemon string) clientVersionNotice {
 	n := clientVersionNotice{DaemonBuild: daemon, Hint: clientVersionHint}
 	if older, ok := olderClient("bridge_build", build.Version, daemon,
@@ -89,7 +100,7 @@ func bridgeVersionNotice(daemon string) clientVersionNotice {
 		n.Clients = append(n.Clients, older)
 	}
 	if clientIs("claude-code") || clientIs("claude code") || os.Getenv("CLAUDE_PLUGIN_ROOT") != "" {
-		if older, ok := olderClient("claude_plugin", claudePluginVersion(), daemon, plugins.ClaudeUpdate); ok {
+		if older, ok := olderClaudePlugin(daemon); ok {
 			n.Clients = append(n.Clients, older)
 		}
 	}

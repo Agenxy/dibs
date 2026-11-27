@@ -65,24 +65,31 @@ func ClaudeInstallVersion(home string) string {
 	return version
 }
 
-// OlderClaudeVersions compares the canonical marketplace install records
-// against the shipped manifest, including distinct installs in other scopes.
-func OlderClaudeVersions(home string) (older []string, shipped string) {
+// ClaudeShippedVersion is the manifest release stamp, independent of the
+// binary's development version. All plugin currency reports share it.
+func ClaudeShippedVersion() string {
 	data, err := files.ReadFile("data/claude-code/.claude-plugin/plugin.json")
 	if err != nil {
-		return nil, ""
+		return ""
 	}
 	var manifest struct{ Version string }
 	if json.Unmarshal(data, &manifest) != nil || !release.Comparable(manifest.Version) {
-		return nil, ""
+		return ""
 	}
+	return manifest.Version
+}
+
+// OlderClaudeVersions compares the canonical marketplace install records
+// against the shipped manifest, including distinct installs in other scopes.
+func OlderClaudeVersions(home string) (older []string, shipped string) {
+	shipped = ClaudeShippedVersion()
 	for _, entry := range claudeInstalls(home)["dibs@dibs"] {
 		value := entry.Version
-		if order, err := release.Compare(value, manifest.Version); err == nil && order < 0 &&
+		if order, err := release.Compare(value, shipped); err == nil && order < 0 &&
 			len(value) <= 128 && !strings.ContainsAny(value, "\r\n\t\x1b") {
 			older = append(older, value)
 		}
 	}
 	slices.Sort(older)
-	return slices.Compact(older), manifest.Version
+	return slices.Compact(older), shipped
 }

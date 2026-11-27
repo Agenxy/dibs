@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/plugins"
 	"github.com/agenxy/dibs/internal/procexec"
 )
 
@@ -183,6 +184,55 @@ func TestClaudeSessionStartAddsVersionContextBeforeRegister(t *testing.T) {
 			got := strings.Contains(result.Hook.Context, "claude plugin update dibs@dibs")
 			if want := version != testVersionDaemonBuild; got != want || (want && result.Hook.Event != "SessionStart") {
 				t.Fatalf("SessionStart drift context=%q, want advice=%t", result.Hook.Context, want)
+			}
+		})
+	}
+}
+
+// A source daemon advances before release stamps its plugin manifests. An
+// update that installs precisely those shipped bytes cannot clear a warning
+// based on the daemon's unrelated binary version. Enter through both actual
+// bridge discovery and the executable SessionStart hook, not a comparator.
+func TestShippedClaudePluginIsCurrentWithAheadOfReleaseDaemon(t *testing.T) {
+	plugin, ok := plugins.For("claude-code")
+	if !ok {
+		t.Fatal("missing shipped Claude plugin")
+	}
+	var manifest struct{ Version string }
+	if err := json.Unmarshal([]byte(plugin.Files[".claude-plugin/plugin.json"]), &manifest); err != nil || manifest.Version == "" {
+		t.Fatal("invalid shipped manifest", err)
+	}
+	old := build.Version
+	build.Version = "99.0.0-dev"
+	t.Cleanup(func() { build.Version = old })
+	for _, tc := range []struct {
+		name, version string
+		warn          bool
+	}{
+		{"shipped", manifest.Version, false},
+		{"older", "0.0.1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRecoveryStdioWithBuild(t, "", build.Version)
+			fixtureClaudeInstall(t, f.dir, tc.version)
+			hello := f.exchange("server/discover", map[string]any{"clientInfo": map[string]any{"name": "claude-code"}})
+			if got := strings.Contains(string(hello), "Dibs client version is behind"); got != tc.warn {
+				t.Errorf("real bridge: plugin warning=%v, want %v: %s", got, tc.warn, hello)
+			}
+			cmd := procexec.Command(t.Context(), os.Args[0], "-test.run=^TestClientDriftHookProcess$")
+			cmd.Env = []string{
+				"DIBS_TEST_VERSION_HOOK=1", "HOME=" + f.dir, "USERPROFILE=" + f.dir,
+				"DIBS_DIR=" + f.dir, "DIBS_ADDR=" + strings.TrimPrefix(f.srv.URL, "http://"),
+				"DIBS_HOST_ID=recovery-host", "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"),
+				"TMPDIR=" + os.TempDir(), "TEMP=" + os.TempDir(),
+			}
+			cmd.Stdin = strings.NewReader(`{"session_id":"source-current","hook_event_name":"SessionStart"}`)
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("hook setup: %v: %s", err, out)
+			}
+			if got := strings.Contains(string(out), "claude plugin update dibs@dibs"); got != tc.warn {
+				t.Errorf("actual SessionStart: warning=%v, want %v: %s", got, tc.warn, out)
 			}
 		})
 	}

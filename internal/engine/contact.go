@@ -72,6 +72,7 @@ func (e *Engine) recentAuthenticatedContact(l *core.Agent, now time.Time) bool {
 
 // Retire replaced process observations and expire idle-lease contact evidence.
 func (e *Engine) trimContactEvidence(now time.Time) {
+	e.pruneAntigravityAccepted()
 	for id, earlier := range e.processContact {
 		l := e.state.Agents[id]
 		if l == nil || recordedProcess(l) != earlier {
