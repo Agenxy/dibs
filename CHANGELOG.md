@@ -52,6 +52,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux, idle observation reads a process name from `/proc` when an
   ancestor's executable is unreadable, instead of starting `ps` for each
   root-owned ancestor on every sweep.
+- An Antigravity wake refused before submission raises the existing contact
+  alert for its still-unread actionable mail. Workspace verification accepts
+  linked Git worktrees using host-qualified repository evidence and reports
+  a deleted working directory explicitly instead of a generic mismatch.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.

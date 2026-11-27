@@ -8,7 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const testConversation = "01a10520-0000-7000-8000-000000000007"
@@ -103,5 +106,38 @@ func TestSelectHubDescriptorRequiresOneLiveCandidate(t *testing.T) {
 	write(43, 38200)
 	if _, ok := selectHubDescriptor(home, onlyCurrent); ok {
 		t.Fatal("selected an ambiguous live descriptor")
+	}
+}
+
+func TestWorkspaceAcceptsLinkedWorktreeButNotUnrelatedRepository(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "main")
+	linked := filepath.Join(root, "linked")
+	other := filepath.Join(root, "other")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := procexec.Command(t.Context(), "git", args...)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git setup %v: %v: %s", args, err, output)
+		}
+	}
+	git("init", repo)
+	git("-C", repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "fixture")
+	git("-C", repo, "worktree", "add", "-b", "linked", linked)
+	git("init", other)
+	uris := []string{"file://" + filepath.ToSlash(repo)}
+	if !workspaceMatches(linked, uris) {
+		t.Fatal("a live linked worktree was rejected for its main checkout workspace")
+	}
+	if workspaceMatches(other, uris) || workspaceMatches(linked, []string{"file://other-host" + filepath.ToSlash(repo)}) {
+		t.Fatal("unrelated repository or remote-host URI authorized a wake")
+	}
+}
+
+func TestMissingWorkspaceReportsMissingDirectory(t *testing.T) {
+	d := descriptor{HTTPPort: 38199, Token: "fixture-token"}
+	err := verifyWorkspace(t.Context(), os.Args[0], d, testConversation, filepath.Join(t.TempDir(), "deleted-worktree"))
+	if err == nil || !strings.Contains(err.Error(), "recorded working directory no longer exists") {
+		t.Fatalf("deleted checkout did not produce an actionable diagnosis: %v", err)
 	}
 }
