@@ -55,6 +55,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux, idle observation reads a process name from `/proc` when an
   ancestor's executable is unreadable, instead of starting `ps` for each
   root-owned ancestor on every sweep.
+- Claude plugin currency compares the loaded plugin to the manifest this
+  build actually ships, as doctor and the daemon already do. A source daemon
+  ahead of that release stamp no longer asks every session to install an
+  identical plugin; genuinely older plugin releases still receive advice.
 - Antigravity hub descriptor changes re-offer still-unread mail to bound
   local conversations. Filesystem events, not a recurring mail timer, drive
   recovery; already-read, withdrawn and retired work stays settled.
