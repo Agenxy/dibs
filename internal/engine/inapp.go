@@ -103,11 +103,15 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop || e.remoteHostOf(l) != "" {
 		return
 	}
+	known := knownHarnessSessions(l)
+	if len(known) == 0 {
+		e.escalateContact(l.ID)
+		return
+	}
 	if l.Status == core.StatusArchived {
 		e.noteAppBinding(l, "archived")
 	}
 	agent, created, thread, session := l.ID, l.CreatedSerial, threadIDOf(l), wakeSessionOf(l)
-	known := knownHarnessSessions(l)
 	finished := e.startWakeWorker(agent, "claude-lineage")
 	go func() {
 		defer finished()

@@ -56,8 +56,11 @@ func (e *Engine) closedHarnessNote(l *core.Agent, socket bool) string {
 		"For time-sensitive work, choose another agent with a reachable harness."
 	if surfaceOf(l) == harnessenv.ClaudeDesktop {
 		note += " The Claude Desktop session and contact alert status are reported after the background route check."
-	} else if thread := threadIDOf(l); thread != "" {
-		note += " Original session: " + thread + "."
+	} else {
+		note += " Unconfirmed delivery may raise a contact alert to the person."
+		if thread := threadIDOf(l); thread != "" {
+			note += " Original session: " + thread + "."
+		}
 	}
 	if l.Status == core.StatusArchived {
 		note += " Retention has ARCHIVED its row; it must register with the same nonce to recover its mailbox."

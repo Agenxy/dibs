@@ -107,8 +107,10 @@ func TestClosedClaudeHighPriorityPostsContactWithoutOpening(t *testing.T) {
 		}
 		posted := make(chan humanask.Message, 1)
 		f.e.SetHumanNotifier(firstContactDesktop{detailed: true, posted: posted})
-		sent := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead",
-			MsgType: core.MsgRequest, RequestPriority: "high", Body: "PRIVATE-CLOSED-CLAUDE-ASK"})
+		sent := f.do(t, &core.Op{
+			Kind: core.OpSendMessage, Token: f.sender, To: "lead",
+			MsgType: core.MsgRequest, RequestPriority: "high", Body: "PRIVATE-CLOSED-CLAUDE-ASK",
+		})
 		serial := sent["msg_serial"].(uint64)
 		synctest.Sleep(time.Second)
 		synctest.Wait()
