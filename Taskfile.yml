@@ -390,6 +390,15 @@ tasks:
     cmds:
       - bun install --frozen-lockfile
 
+  gate:k3:
+    desc: "Run the Go half of the gate natively on the riscv64 K3 seat (task gate:k3 SHA=<rev>)"
+    # Hosted CI only emulates riscv64, for three packages. The first native run
+    # of the whole suite found two Linux bugs that emulation missed, so the
+    # native run is the evidence. tools/k3gate says why it is shaped this way.
+    # It needs `ssh k3-dibs` to work; docs/PLATFORMS.md describes the seat.
+    cmds:
+      - go run ./tools/k3gate -sha {{.SHA | default "HEAD"}}
+
   release:drift:
     desc: "How long main has held unreleased commits; fails past seven days"
     # Scheduled daily in .github/workflows/release-drift.yml, never in `ci`:
