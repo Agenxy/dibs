@@ -27,6 +27,9 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 		case harnessenv.CodexOutsideApp:
 			app = "its terminal or IDE"
 		}
+		if antigravityHarness(l) {
+			app = "Antigravity"
+		}
 	}
 	location := name + " in " + app + " on " + host
 	if reason := e.bindingRecoveryReason(l); reason != "" {

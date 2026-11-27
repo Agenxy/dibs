@@ -109,6 +109,24 @@ func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *
 			}
 			waitWakeDone(t, e, "worker")
 			serial := sentMail["msg_serial"].(uint64)
+			if tc.lookupFails {
+				_, err := e.query(ctx, func() core.Result {
+					m := e.state.Messages[serial]
+					if m == nil || m.ContactEscalatedAt == 0 {
+						t.Error("refused-before-submission wake left unread mail without a contact alert")
+					} else {
+						notice, _ := e.contactNotice(e.state.Contacts[m.ContactEscalatedAt])
+						if notice.Contact == nil || !strings.Contains(notice.Contact.OpenHint, "Antigravity") ||
+							!strings.Contains(notice.Contact.OpenHint, conversation) {
+							t.Errorf("contact did not identify the original conversation: %+v", notice.Contact)
+						}
+					}
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			duplicate := send()
 			if duplicate["deduplicated"] != true || duplicate["msg_serial"] != serial {
 				t.Fatalf("setup: second send did not reuse its original mail: %+v", duplicate)
@@ -222,5 +240,64 @@ func TestAntigravityWakeSurvivesDaemonReplayWithoutRecipientCheckIn(t *testing.T
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("verified app conversation lost its wake route across restart")
+	}
+}
+
+func TestAntigravityRefusalDoesNotEscalateSettledAttempt(t *testing.T) {
+	const conversation = "01a10520-0000-7000-8000-000000000094"
+	for _, settled := range []string{"withdrawn", "read", "rebound"} {
+		t.Run(settled, func(t *testing.T) {
+			entered, release := make(chan struct{}), make(chan struct{})
+			previous := prepareAntigravity
+			prepareAntigravity = func(ctx context.Context, _, _ string) (func(context.Context, string) error, error) {
+				close(entered)
+				select {
+				case <-release:
+				case <-ctx.Done():
+				}
+				return nil, errors.New("fixture missing workspace")
+			}
+			t.Cleanup(func() { prepareAntigravity = previous })
+			e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+			ctx, cancel := context.WithCancel(t.Context())
+			go e.Run(ctx)
+			t.Cleanup(func() { cancel(); <-e.Done() })
+			worker := contactReplayDo(t, e, ctx, &core.Op{
+				Kind: core.OpRegister, Name: "worker", SessionAlias: conversation, AgentKind: core.KindPersistent,
+				Agent: &core.AgentInfo{Harness: antigravity.Client, HostID: e.HostID()},
+			})["token"].(string)
+			e.BindAntigravity(ctx, worker, conversation)
+			sender := registerAgent(t, e, "sender")
+			sleepAntigravitySendRecipient(t, e, ctx)
+			serial := contactReplayDo(t, e, ctx, &core.Op{
+				Kind: core.OpSendMessage, Token: sender, To: "worker", MsgType: core.MsgQuestion, Body: "fixture",
+			})["msg_serial"].(uint64)
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("real send did not enter app preflight")
+			}
+			switch settled {
+			case "withdrawn":
+				contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRespond, Token: sender, MsgSerial: serial, Disposition: "withdraw"})
+			case "read":
+				if _, err := e.ReadMail(ctx, worker, serial, true); err != nil {
+					t.Fatal(err)
+				}
+			case "rebound":
+				e.BindAntigravity(ctx, worker, "")
+				e.BindAntigravity(ctx, worker, conversation)
+			}
+			close(release)
+			waitWakeDone(t, e, "worker")
+			if _, err := e.query(ctx, func() core.Result {
+				if len(e.state.Contacts) != 0 {
+					t.Error("stale preflight failure escalated settled mail/binding")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

@@ -98,6 +98,17 @@ func Prepare(ctx context.Context, conversation, cwd string) (func(context.Contex
 }
 
 func verifyWorkspace(ctx context.Context, exe string, d descriptor, conversation, cwd string) error {
+	if cwd != "" {
+		info, err := os.Stat(cwd)
+		if errors.Is(err, os.ErrNotExist) {
+			return errors.New("the recorded working directory no longer exists; " +
+				"check in from an existing workspace in this conversation")
+		}
+		if err != nil || !info.IsDir() {
+			return errors.New("the recorded working directory is not an accessible directory; " +
+				"check in from an existing workspace in this conversation")
+		}
+	}
 	var reply struct {
 		Response struct {
 			Conversation struct {
@@ -134,8 +145,30 @@ func workspaceMatches(cwd string, uris []string) bool {
 		if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
 			return true
 		}
+		if sameLocalProject(cwd, u.Path) {
+			return true
+		}
 	}
 	return false
+}
+
+// Both paths are observations from this machine: Prepare only accepts the
+// locally verified desktop hub, and the engine excludes remote agent bindings.
+// Keep that host beside the Git facts when using core's repository rule. A
+// file URI naming another host is rejected before it reaches this comparison.
+func sameLocalProject(a, b string) bool {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		return false
+	}
+	identity := func(dir string) *core.AgentInfo {
+		common, remote, roots, ok := paths.Identify(dir).Identity()
+		if !ok {
+			return nil
+		}
+		return &core.AgentInfo{HostID: host, RepoDir: common, RepoRemote: remote, RepoRoots: roots}
+	}
+	return core.SameProject(identity(a), identity(b))
 }
 
 func currentDesktopDescriptor() (Hub, descriptor, error) {
