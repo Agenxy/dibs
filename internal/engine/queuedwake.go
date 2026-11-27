@@ -73,10 +73,65 @@ func queuesFor(l *core.Agent, byHarness map[string]wakeCommand) bool {
 func (e *Engine) noteQueuedWake(agent string, now time.Time) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	if e.wakers.queued == nil {
-		e.wakers.queued = map[string]time.Time{}
+	e.wakers.noteQueuedWakeLocked(agent, now)
+}
+
+func (w *wakers) noteQueuedWakeLocked(agent string, now time.Time) {
+	if w.queued == nil {
+		w.queued = map[string]time.Time{}
 	}
-	e.wakers.queued[agent] = now
+	w.queued[agent] = now
+}
+
+type queuedMailOffer struct {
+	at      time.Time
+	fence   nativeContactFence
+	serials []uint64
+}
+
+// Record the offer and its cohort together on the writer. Timestamp at
+// attempt start so a prompt hook during the command can still precede Stop.
+func (e *Engine) noteQueuedMailOffer(plan wakePlan, started time.Time, unread []uint64) {
+	w := &e.wakers
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if started.Before(w.queued[plan.agent]) || plan.queueEpoch != w.queueEpoch {
+		return
+	}
+	w.noteQueuedWakeLocked(plan.agent, started)
+	if len(unread) == 0 {
+		delete(w.queuedMail, plan.agent)
+		return
+	}
+	if w.queuedMail == nil {
+		w.queuedMail = map[string]queuedMailOffer{}
+	}
+	w.queuedMail[plan.agent] = queuedMailOffer{started, plan.nativeContactFence(), unread}
+}
+
+// A later prompt and real Stop establish that a turn has passed. Relinquish
+// only the last cohort still awaiting its recipient's read. The next ordinary
+// actionable event can offer it, subject to the same queue admission gate.
+// Stop itself submits nothing. An ambiguous submission is never in this cohort.
+func (e *Engine) releaseUnreadQueuedOffer(l *core.Agent) {
+	w := &e.wakers
+	w.mu.Lock()
+	offer, ok := w.queuedMail[l.ID]
+	f := offer.fence
+	if !ok || f.created != l.CreatedSerial || !l.SessionIsCurrent(f.session) || f.thread != threadIDOf(l) ||
+		f.commandEpoch != e.commandEpoch[l.ID] || f.queueEpoch != w.queueEpoch || offer.at != w.queued[l.ID] ||
+		!w.queuedPrompt[l.ID].After(offer.at) {
+		w.mu.Unlock()
+		return
+	}
+	delete(w.queuedMail, l.ID)
+	w.mu.Unlock()
+	for _, serial := range offer.serials {
+		m := e.state.Messages[serial]
+		if unreadContactAsk(m) && e.mailBelongsTo(m, l) {
+			delete(e.commandWritten, "mail:"+noticeKey(l.ID, serial))
+		}
+	}
 }
 
 // wakeStillQueuedLocked reports whether the last command wake for this agent is

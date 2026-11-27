@@ -282,6 +282,12 @@ func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason stri
 			"Contact alert %d is recorded for the person; %s. OS posting does not prove visibility.",
 			l.ID, contactReasonText(c.Reason), c.Serial, hint)
 	}
+	if alert, ok := e.closedClaudeBinding(l); ok {
+		text = fmt.Sprintf("Message #%d to %s. %s", m.Serial, l.ID, e.closedClaudeSendNote(l, m, alert))
+	} else if !c.NotifiedAt.IsZero() && surfaceOf(l) == harnessenv.ClaudeDesktop {
+		text = fmt.Sprintf("Contact alert #%d for message #%d to %s was posted for the person. %s.",
+			c.Serial, m.Serial, l.ID, hint)
+	}
 	// This is contact news, not an envelope outcome. Reading the still-pending
 	// source mail neither presents nor consumes this separate delivery warning.
 	e.pushNoticeKind(m.From, text, c.Serial, 0, true, now, "contact.escalated")
@@ -315,11 +321,13 @@ func (e *Engine) rebuildAppContactSenders() {
 			continue
 		}
 		recipient := e.state.Agents[c.Recipient]
-		if recipient == nil || (surfaceOf(recipient) != harnessenv.ChatGPTApp &&
-			surfaceOf(recipient) != harnessenv.ClaudeDesktop && surfaceOf(recipient) != harnessenv.ChatGPTCloudExec) {
-			continue
+		if c.Reason == core.ContactClaudeUnavailable && c.NotifiedAt.IsZero() {
+			continue // the next posting attempt will produce the sender's outcome
 		}
-		e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)
+		switch surfaceOf(recipient) {
+		case harnessenv.ChatGPTApp, harnessenv.ClaudeDesktop, harnessenv.ChatGPTCloudExec:
+			e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)
+		}
 	}
 }
 

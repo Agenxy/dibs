@@ -233,6 +233,8 @@ func contactReasonText(reason core.ContactReason) string {
 			"Open the original thread to inspect the failure or move the agent."
 	case core.ContactQueueStateUnknown:
 		return "Dibs could not confirm the thread's state or whether its queued notice was delivered."
+	case core.ContactClaudeUnavailable:
+		return "The original Claude Desktop session has no available background input route."
 	}
 	return ""
 }

@@ -206,14 +206,9 @@ func (e *Engine) runWakeAndReportPlan(cmd *wakePlan, agent string) bool {
 		if native {
 			e.recordSocketOutcome(*cmd, true)
 		} else {
-			e.recordCommandWritten(*cmd)
+			e.recordCommandWritten(*cmd, started)
 		}
 		e.noteDibsStartedTurn(agent, time.Now())
-		if cmd.queuedDelivery() {
-			// At the START: a sign of the agent while the command ran is a
-			// delivery, and stamping the end would hide it.
-			e.noteQueuedWake(agent, started)
-		}
 		e.clearWakeAttempts(agent)
 		e.forgetWakeFailures(agent)
 		return true

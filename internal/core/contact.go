@@ -19,6 +19,7 @@ const (
 	ContactCompactionFailed  ContactReason = "codex_compaction_failed"
 	ContactContextFull       ContactReason = "codex_context_full"
 	ContactQueueStateUnknown ContactReason = "codex_queue_state_unknown"
+	ContactClaudeUnavailable ContactReason = "claude_desktop_unreachable"
 )
 
 // ContactEscalation is replayable proof that delivery remained unconfirmed and Dibs
@@ -53,7 +54,8 @@ func admitContactReason(op *Op) error {
 	}
 	if op.Kind == OpContactDiagnosed && !op.ContactMailboxFull {
 		switch op.ContactReason {
-		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull, ContactQueueStateUnknown:
+		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull,
+			ContactQueueStateUnknown, ContactClaudeUnavailable:
 			return nil
 		}
 	}

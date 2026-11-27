@@ -6,6 +6,7 @@ package engine
 import (
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
@@ -102,12 +103,16 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop || e.remoteHostOf(l) != "" {
 		return
 	}
-	if l.Gone() {
-		e.noteAppBinding(l, "archived")
+	known := knownHarnessSessions(l)
+	if len(known) == 0 {
+		// There is no CLI session to look up and no background route to recover.
+		e.escalateContact(l.ID)
 		return
 	}
-	agent, created, thread := l.ID, l.CreatedSerial, threadIDOf(l)
-	known := knownHarnessSessions(l)
+	if l.Status == core.StatusArchived {
+		e.noteAppBinding(l, "archived")
+	}
+	agent, created, thread, session := l.ID, l.CreatedSerial, threadIDOf(l), wakeSessionOf(l)
 	finished := e.startWakeWorker(agent, "claude-lineage")
 	go func() {
 		defer finished()
@@ -116,22 +121,39 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 		}
 		// A resumed app session may be running under a newer CLI id than
 		// the writer's peer snapshot. This lookup and process probe do I/O.
-		_, current := harnessenv.ClaudeAppSessionNow("", known...)
-		if current != "" && claudeRunning(current) {
-			e.deliverToRunningSession(agent, created, thread, known)
+		attempt := wakeDiagnostic{
+			Route: "claude_desktop", Outcome: "no_background_input_route",
+			created: created, session: session, thread: thread, attemptedAt: time.Now(),
+		}
+		local, current := harnessenv.ClaudeAppSessionNow("", known...)
+		if current != "" && claudeRunning(current) && e.deliverToRunningSession(agent, created, thread, known) {
 			return
 		}
+		if sidecar := harnessenv.ClaudeHostSession(known...); sidecar != "" {
+			local = sidecar
+		}
 		_, _ = e.query(e.deliveryContext(), func() core.Result {
-			l := e.state.Agents[agent]
-			if l != nil && !l.Gone() && l.CreatedSerial == created && threadIDOf(l) == thread &&
-				surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" && !e.noCurrentWakeWork(l) {
-				e.noteAppBinding(l, "waiting-thread-open")
-				slog.Debug("waiting for its thread to be opened", "agent", agent,
-					"reason", "the app's ended-session route navigates and takes focus; mail remains stored")
-			}
+			e.recordClosedClaudeRoute(agent, attempt, local)
 			return nil
 		})
 	}()
+}
+
+func (e *Engine) recordClosedClaudeRoute(agent string, attempt wakeDiagnostic, appSession string) {
+	l := e.state.Agents[agent]
+	if l == nil || l.Retired() || l.CreatedSerial != attempt.created || threadIDOf(l) != attempt.thread ||
+		wakeSessionOf(l) != attempt.session || surfaceOf(l) != harnessenv.ClaudeDesktop || e.remoteHostOf(l) != "" ||
+		e.noCurrentWakeWork(l) || e.hasWakeRoute(l) || e.socketOwnsDelivery(l) ||
+		e.lastEvidenceOf(l).After(attempt.attemptedAt) {
+		return
+	}
+	e.noteAppBinding(l, "waiting-thread-open")
+	alert := e.appBindings[agent]
+	alert.appSession = appSession
+	e.appBindings[agent] = alert
+	attempt.ObservedAt = time.Now().UTC()
+	e.storeWakeDiagnostic(agent, attempt)
+	e.escalateContact(agent)
 }
 
 var claudeRunning = harnessenv.ClaudeSessionRunning
@@ -139,21 +161,24 @@ var claudeRunning = harnessenv.ClaudeSessionRunning
 // Preserve the background half of closed-session recovery: refresh the
 // actual peer/lineage cache and offer one socket wake on the writer. No
 // app URL or process launch is involved; a missing socket stays unconfirmed.
-func (e *Engine) deliverToRunningSession(agent string, created uint64, thread string, known []string) {
+func (e *Engine) deliverToRunningSession(agent string, created uint64, thread string, known []string) bool {
 	if _, ok := peerSessionIn(e.refreshPeersNow(), known); !ok {
 		slog.Info("this agent's Claude app session is open but publishes no socket Dibs can reach",
 			"agent", agent, "hint", "its mail is delivered at its next Dibs call")
-		return
+		return false
 	}
-	_, _ = e.query(e.deliveryContext(), func() core.Result {
+	res, err := e.query(e.deliveryContext(), func() core.Result {
 		l := e.state.Agents[agent]
 		if l != nil && !l.Retired() && l.CreatedSerial == created && threadIDOf(l) == thread &&
-			surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" {
+			surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" &&
+			(e.hasWakeRoute(l) || e.socketOwnsDelivery(l)) {
 			delete(e.appBindings, agent)
 			e.retryWakeDecision(agent)
+			return core.Result{"reachable": true}
 		}
 		return nil
 	})
+	return err == nil && res["reachable"] == true
 }
 
 // knownHarnessSessions is every thread-shaped session id Dibs has recorded for

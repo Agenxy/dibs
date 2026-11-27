@@ -28,9 +28,16 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message) string {
 	if e.antigravityBinding(l) != 0 && !e.socketOwnsDelivery(l) {
 		return e.antigravityWakeNote(l, m)
 	}
+	return e.socketOrCommandDeliveryNote(l, m)
+}
+
+func (e *Engine) socketOrCommandDeliveryNote(l *core.Agent, m *core.Message) string {
 	socket, self := e.sendNoteSocketRoute(l)
 	command := e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != ""
 	if !socket && !command {
+		if alert, ok := e.closedClaudeBinding(l); ok {
+			return e.closedClaudeSendNote(l, m, alert)
+		}
 		return e.PullOnlyNote(l)
 	}
 	if note := e.sendWakeCauseNote(l, m); note != "" {

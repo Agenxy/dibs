@@ -14,6 +14,7 @@ type contactAttempt struct {
 	count   int
 	armed   bool
 	failure string
+	urgent  chan struct{}
 }
 type contactAlertView struct {
 	*core.ContactEscalation
@@ -58,6 +59,9 @@ func (e *Engine) contactDeliveryFailed(serial uint64, reason string) {
 		e.contactAttempts = map[uint64]contactAttempt{}
 	}
 	e.contactAttempts[serial] = rec
+	if rec.count >= 2 {
+		e.notifyClaudeContactSenders(c, time.Now())
+	}
 }
 
 func (e *Engine) decorateContactAlerts(b core.Result) {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -81,6 +82,9 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: worker["token"].(string)}); err != nil {
+		t.Fatal(err)
+	}
 	asker, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker-0123456789abcdef"})
 	if err != nil {
 		t.Fatal(err)
@@ -92,15 +96,17 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}}); err != nil {
 		t.Fatal(err)
 	}
-	send := func(id string) {
+	send := func(id string) uint64 {
 		t.Helper()
 		<-time.After(20 * time.Millisecond) // past the 1ms cooldown and the recency window
-		if _, err := e.Do(ctx, &core.Op{
+		r, err := e.Do(ctx, &core.Op{
 			Kind: core.OpSendMessage, Token: atok, To: "worker",
 			MsgType: core.MsgQuestion, Body: "are you there? " + id, OpID: id,
-		}); err != nil {
-			t.Fatal(err)
+		})
+		if err != nil || r["error"] != nil {
+			t.Fatalf("send %s: %v / %v", id, r, err)
 		}
+		return r["msg_serial"].(uint64)
 	}
 	woke := func() bool {
 		t.Helper()
@@ -114,7 +120,7 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 		return false
 	}
 
-	send("q1")
+	first := send("q1")
 	if !woke() {
 		t.Fatal("setup: the first question woke nobody, so nothing below tests a second")
 	}
@@ -124,7 +130,7 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 			"later becomes an empty turn")
 	}
 	// An ordinary MCP call during a running turn is not a queue receipt.
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: worker["token"].(string)}); err != nil {
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSetSlot, Token: worker["token"].(string), Text: "work"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}}); err != nil {
@@ -136,6 +142,22 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 	}
 	if _, err := e.HookPoll(ctx, contThread, "UserPromptSubmit", cwd, false, false); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := e.HookPoll(ctx, contThread, "Stop", cwd, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if woke() {
+		t.Fatal("turn completion alone submitted another wake")
+	}
+	offer, err := e.query(ctx, func() core.Result {
+		m := e.state.Messages[first]
+		return core.Result{
+			"state":     m.State,
+			"offerable": slices.Contains(e.freshCommandKeys("worker", time.Now()), "mail:"+noticeKey("worker", first)),
+		}
+	})
+	if err != nil || offer["state"] != core.MsgStatePending || offer["offerable"] != true {
+		t.Fatalf("queued turn ended without reading; later delivery must be able to offer the original question: %v / %v", offer, err)
 	}
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}}); err != nil {
 		t.Fatal(err)
