@@ -123,7 +123,9 @@ func codexHookWarnings(report plugins.CodexHookReport, key string) []clientDrift
 	if unchanged > 0 {
 		warnings = append(warnings, clientDriftWarning{
 			key,
-			fmt.Sprintf("Codex reports %d unchanged Dibs hooks as modified; lifecycle delivery is not approved", unchanged),
+			fmt.Sprintf(
+				"Codex reports %d Dibs hooks as modified (source matches shipped bytes); approval needs review", unchanged,
+			),
 			"Review the hooks with `dibs codex-hooks` and Codex `/hooks`; verify `dibs doctor` afterwards. " +
 				"Dibs changed no hook trust or enablement.",
 		})

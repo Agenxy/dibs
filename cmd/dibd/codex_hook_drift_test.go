@@ -64,7 +64,7 @@ func TestDaemonStartupReportsUnchangedHookTrustLoss(t *testing.T) {
 	_, stop, logs := qStartBoardCaptured(t, qShortDir(t), "DIBS_TEST_HOOK_RUNTIME="+bin, "DIBS_TEST_HOOK_REPORT="+file,
 		"DIBS_TEST_HOOK_POSTED="+posted,
 		"HOME="+home, "CODEX_HOME="+home, "DIBS_NOTIFY=off")
-	want := "Codex reports 1 unchanged Dibs hooks as modified"
+	want := "Codex reports 1 Dibs hooks as modified (source matches shipped bytes)"
 	deadline := time.After(5 * time.Second)
 	for {
 		body, _ := os.ReadFile(posted)
