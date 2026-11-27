@@ -18,8 +18,9 @@ import (
 	"github.com/agenxy/dibs/internal/plugins"
 )
 
-// Only the external read-only probe is replaced. The real daemon run and
-// startup monitor must call it, classify it and publish their actual warning.
+// Replace only external process/report I/O and notification posting. The real
+// factory must discover the owned hook file; the startup monitor must inspect
+// its approval, classify it and submit the warning.
 func installCodexTrustFixture() {
 	bin := os.Getenv("DIBS_TEST_HOOK_RUNTIME")
 	if bin == "" {
@@ -30,23 +31,30 @@ func installCodexTrustFixture() {
 		return os.WriteFile(os.Getenv("DIBS_TEST_HOOK_POSTED"), []byte(title+"\n"+subtitle+"\n"+body), 0o600)
 	}
 	codexTrustObserver = func() *codexTrustWatch {
-		return &codexTrustWatch{
-			resolve: func() string { return bin },
-			inspect: func(context.Context) (plugins.CodexHookReport, error) {
-				var report plugins.CodexHookReport
-				b, err := os.ReadFile(os.Getenv("DIBS_TEST_HOOK_REPORT"))
-				if err != nil {
-					return report, err
-				}
-				err = json.Unmarshal(b, &report)
+		w := newCodexTrustWatch()
+		w.resolve = func() string { return bin }
+		w.inspect = func(context.Context) (plugins.CodexHookReport, error) {
+			var report plugins.CodexHookReport
+			b, err := os.ReadFile(os.Getenv("DIBS_TEST_HOOK_REPORT"))
+			if err != nil {
 				return report, err
-			},
+			}
+			err = json.Unmarshal(b, &report)
+			return report, err
 		}
+		return w
 	}
 }
 
 func TestDaemonStartupReportsUnchangedHookTrustLoss(t *testing.T) {
 	home := t.TempDir()
+	plugin, ok := plugins.For("codex")
+	if !ok {
+		t.Fatal("missing shipped Codex plugin fixture")
+	}
+	if err := os.WriteFile(filepath.Join(home, "hooks.json"), []byte(plugin.Files["hooks.json"]), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	bin := filepath.Join(home, "fixture-runtime")
 	if err := os.WriteFile(bin, []byte("fixture runtime"), 0o700); err != nil {
 		t.Fatal(err)
