@@ -29,6 +29,17 @@ The advisory `linux-riscv64` job runs the state machine, ledger, and board
 configuration packages under QEMU user-mode emulation. The native Linux job
 provides the race and kernel peer-identity evidence.
 
+The whole Go suite also runs natively on riscv64 Linux, on a SpacemiT K3
+seat, through `task gate:k3`: vet, build, `go test -race ./...` and
+govulncheck, at low CPU and IO priority on a shared box. The seat has no bun
+or browser, so lint and the e2e suites stay on the macOS gate and hosted CI.
+The first native run (2026-11-24) found two Linux bugs that emulation and
+the amd64 runner both missed. An OS account named `dibs` gave the person the
+same address as Dibs' own notices. A `dibd` started over ssh ran `ps` for
+every root-owned ancestor on each idle sweep. Run the native suite with an
+ssh session attached at least once per change to process inspection: a
+detached run is reparented to init and never meets those ancestors.
+
 Windows builds and vets, and the pure packages (the state machine, the
 ledger, the board config, the scorer and the liveness parsers) run on a
 windows runner in CI. The first run there said the state machine did not

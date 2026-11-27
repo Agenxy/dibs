@@ -21,6 +21,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Release archives include static Linux riscv64 binaries. CI cross-builds
   that target and runs the state machine, ledger, and board configuration tests
   under QEMU.
+- `task gate:k3` runs vet, build, `go test -race ./...` and govulncheck
+  natively on a riscv64 Linux seat and exits with that run's status.
 - `check_in(board_view:"coordination")` shows work and claims in a board
   projection capped at 24 KiB.
 - `dibs mcp-config` names the Antigravity desktop settings file for its
@@ -37,6 +39,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- On Linux, a board run by an OS account named `dibs` or `coordinator` labels
+  the person `human`, so the person no longer shares an address with Dibs'
+  own notices. The recovery identity is unchanged.
+- On Linux, idle observation reads a process name from `/proc` when an
+  ancestor's executable is unreadable, instead of starting `ps` for each
+  root-owned ancestor on every sweep.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.
