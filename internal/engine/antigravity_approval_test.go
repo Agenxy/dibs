@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/agenxy/dibs/internal/antigravity"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/humanask"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const approvalTestConversation = "01a10520-0000-7000-8000-000000000097"
@@ -50,7 +50,7 @@ func writeAntigravityApprovalConversation(t *testing.T, steps string, hotJournal
 	sql := "CREATE TABLE steps(idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER); " +
 		"INSERT INTO steps VALUES " + steps
 	db := filepath.Join(dbDir, approvalTestConversation+".db")
-	cmd := exec.CommandContext(t.Context(), "/usr/bin/sqlite3", "-init", os.DevNull, db, sql)
+	cmd := procexec.Command(t.Context(), "/usr/bin/sqlite3", "-init", os.DevNull, db, sql)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("setup conversation database: %v %s", err, out)
 	}
