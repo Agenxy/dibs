@@ -56,6 +56,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   build actually ships, as doctor and the daemon already do. A source daemon
   ahead of that release stamp no longer asks every session to install an
   identical plugin; genuinely older plugin releases still receive advice.
+- An Antigravity wake refused before submission raises the existing contact
+  alert for its still-unread actionable mail. Workspace verification accepts
+  linked Git worktrees using host-qualified repository evidence and reports
+  a deleted working directory explicitly instead of a generic mismatch.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.
