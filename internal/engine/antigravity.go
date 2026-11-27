@@ -47,6 +47,7 @@ func (e *Engine) BindAntigravity(ctx context.Context, token, conversation string
 		_, _ = e.applyAndLedger(&core.Op{
 			Kind: core.OpAntigravityBinding, Token: token, SessionID: conversation,
 		}, time.Now())
+		e.startAntigravityWatch(e.deliveryContext())
 		return nil
 	})
 }
@@ -129,6 +130,14 @@ func antigravityLastWakeNote(outcome string) string {
 
 func (e *Engine) runAntigravityWake(plan *wakePlan, agent string) bool {
 	ctx := e.deliveryContext()
+	_, _ = e.query(ctx, func() core.Result {
+		l := e.state.Agents[agent]
+		if e.antigravityBinding(l) == plan.antigravity && l.CurrentSession == plan.thread && cwdOf(l) == plan.cwd &&
+			e.originalNativeWakeOwed(*plan, agent) {
+			e.contactUnreadAntigravityAcceptance(agent)
+		}
+		return nil
+	})
 	// The descriptor, its credentials and the exact conversation are checked
 	// outside the writer. Recheck the receiving incarnation and the original
 	// mail after that I/O so a move or read can settle the plan before delivery.
