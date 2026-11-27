@@ -95,16 +95,36 @@ func (e *Engine) noteAntigravityAccepted(p wakePlan) {
 // A later actual wake is evidence that the prior accepted notice did not
 // establish mail delivery. Ordinary FYIs remain under the existing contact
 // eligibility rule; the board never manufactures a read or a failed turn.
-func (e *Engine) contactUnreadAntigravityAcceptance(agent string) {
+func (e *Engine) contactUnreadAntigravityAcceptance(ctx context.Context, plan wakePlan, agent string) {
+	res, err := e.query(ctx, func() core.Result {
+		c, ok := e.antigravityAccepted[agent]
+		return core.Result{"unread_acceptance": ok && e.antigravityContactCurrent(plan, agent, c)}
+	})
+	if err != nil || res["unread_acceptance"] != true {
+		return
+	}
+	var reason core.ContactReason
+	if antigravity.WaitingForCommandApproval(ctx, plan.thread) {
+		reason = core.ContactAntigravityApproval
+	}
+	_, _ = e.query(ctx, func() core.Result {
+		e.escalateUnreadAntigravityAcceptance(plan, agent, reason)
+		return nil
+	})
+}
+
+func (e *Engine) antigravityContactCurrent(plan wakePlan, agent string, c antigravityAcceptance) bool {
+	l := e.state.Agents[agent]
+	return c.matches(e, l) && c.binding == plan.antigravity && l.CurrentSession == plan.thread &&
+		cwdOf(l) == plan.cwd && e.originalNativeWakeOwed(plan, agent)
+}
+
+func (e *Engine) escalateUnreadAntigravityAcceptance(plan wakePlan, agent string, reason core.ContactReason) {
 	c, ok := e.antigravityAccepted[agent]
-	if !ok {
+	if !ok || !e.antigravityContactCurrent(plan, agent, c) {
 		return
 	}
 	l := e.state.Agents[agent]
-	if !c.matches(e, l) {
-		delete(e.antigravityAccepted, agent)
-		return
-	}
 	ids := make([]uint64, 0, len(c.items))
 	for id := range c.items {
 		ids = append(ids, id)
@@ -114,6 +134,9 @@ func (e *Engine) contactUnreadAntigravityAcceptance(agent string) {
 		m := e.state.Messages[id]
 		if unreadAntigravityContact(m) && e.mailBelongsTo(m, l) && m.ContactEscalatedAt == 0 {
 			op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: id}
+			if reason != "" {
+				op.Kind, op.ContactReason, op.AgentID = core.OpContactDiagnosed, reason, agent
+			}
 			if e.state.Admit(op) == nil {
 				if _, err := e.applyAndLedger(op, time.Now()); err != nil {
 					slog.Error("could not record unread Antigravity acceptance contact", "agent", agent, "err", err)

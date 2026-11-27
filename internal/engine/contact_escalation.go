@@ -81,12 +81,15 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 	if reason := contactReasonText(c.Reason); reason != "" {
 		hint = reason + " " + hint
 	}
+	if c.Reason != core.ContactAntigravityApproval {
+		hint = "delivery unconfirmed; " + hint
+	}
 	n := HumanNotice{
 		Serial: c.Serial, Type: "contact", Node: e.state.NodeID, Priority: priority,
 		Contact: &humanask.Contact{
 			Recipient: name, Sender: sender, Kind: kind, MailboxFull: c.MailboxFull,
 			Message: c.OldestSerial, Count: c.Count,
-			OpenHint: "delivery unconfirmed; " + hint,
+			OpenHint: hint,
 		},
 	}
 	return n, plan
