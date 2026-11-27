@@ -105,6 +105,7 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 	}
 	known := knownHarnessSessions(l)
 	if len(known) == 0 {
+		// There is no CLI session to look up and no background route to recover.
 		e.escalateContact(l.ID)
 		return
 	}
@@ -120,35 +121,39 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 		}
 		// A resumed app session may be running under a newer CLI id than
 		// the writer's peer snapshot. This lookup and process probe do I/O.
-		started := time.Now()
+		attempt := wakeDiagnostic{
+			Route: "claude_desktop", Outcome: "no_background_input_route",
+			created: created, session: session, thread: thread, attemptedAt: time.Now(),
+		}
 		local, current := harnessenv.ClaudeAppSessionNow("", known...)
-		if current != "" && claudeRunning(current) {
-			if e.deliverToRunningSession(agent, created, thread, known) {
-				return
-			}
+		if current != "" && claudeRunning(current) && e.deliverToRunningSession(agent, created, thread, known) {
+			return
 		}
 		if sidecar := harnessenv.ClaudeHostSession(known...); sidecar != "" {
 			local = sidecar
 		}
 		_, _ = e.query(e.deliveryContext(), func() core.Result {
-			l := e.state.Agents[agent]
-			if l == nil || l.Retired() || l.CreatedSerial != created || threadIDOf(l) != thread ||
-				wakeSessionOf(l) != session || surfaceOf(l) != harnessenv.ClaudeDesktop || e.remoteHostOf(l) != "" ||
-				e.noCurrentWakeWork(l) || e.hasWakeRoute(l) || e.socketOwnsDelivery(l) || e.lastEvidenceOf(l).After(started) {
-				return nil
-			}
-			e.noteAppBinding(l, "waiting-thread-open")
-			alert := e.appBindings[agent]
-			alert.appSession = local
-			e.appBindings[agent] = alert
-			e.storeWakeDiagnostic(agent, wakeDiagnostic{
-				Route: "claude_desktop", Outcome: "no_background_input_route", ObservedAt: time.Now().UTC(),
-				created: created, session: session, thread: thread, attemptedAt: started,
-			})
-			e.escalateContact(agent)
+			e.recordClosedClaudeRoute(agent, attempt, local)
 			return nil
 		})
 	}()
+}
+
+func (e *Engine) recordClosedClaudeRoute(agent string, attempt wakeDiagnostic, appSession string) {
+	l := e.state.Agents[agent]
+	if l == nil || l.Retired() || l.CreatedSerial != attempt.created || threadIDOf(l) != attempt.thread ||
+		wakeSessionOf(l) != attempt.session || surfaceOf(l) != harnessenv.ClaudeDesktop || e.remoteHostOf(l) != "" ||
+		e.noCurrentWakeWork(l) || e.hasWakeRoute(l) || e.socketOwnsDelivery(l) ||
+		e.lastEvidenceOf(l).After(attempt.attemptedAt) {
+		return
+	}
+	e.noteAppBinding(l, "waiting-thread-open")
+	alert := e.appBindings[agent]
+	alert.appSession = appSession
+	e.appBindings[agent] = alert
+	attempt.ObservedAt = time.Now().UTC()
+	e.storeWakeDiagnostic(agent, attempt)
+	e.escalateContact(agent)
 }
 
 var claudeRunning = harnessenv.ClaudeSessionRunning

@@ -311,7 +311,8 @@ func (e *Engine) notifyClaudeContactSenders(c *core.ContactEscalation, now time.
 		return
 	}
 	for _, m := range e.state.Inbox(l.ID) {
-		if m.ContactEscalatedAt == c.Serial && e.notifyAppOpenSender(l, m, "delivery to the original app is unconfirmed", now) {
+		if m.ContactEscalatedAt == c.Serial &&
+			e.notifyAppOpenSender(l, m, "delivery to the original app is unconfirmed", now) {
 			e.wakeAppContactSender(m, now)
 		}
 	}
@@ -361,35 +362,38 @@ func (e *Engine) escalateContact(agent string) {
 		if m.State != core.MsgStatePending || m.ContactEscalatedAt != 0 || !m.ContactEligible() {
 			continue
 		}
-		op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
-		if closedClaude {
-			op.Kind, op.ContactReason, op.AgentID = core.OpContactDiagnosed, core.ContactClaudeUnavailable, l.ID
-		}
-		if err := e.state.Admit(op); err != nil {
-			slog.Debug("contact escalation is no longer eligible", "agent", agent, "msg", m.Serial, "err", err)
-			continue
-		}
-		now := time.Now()
-		if _, err := e.applyAndLedger(op, now); err != nil {
-			slog.Error("could not record contact escalation", "agent", agent, "msg", m.Serial, "err", err)
-			continue
-		}
-		if highPriorityContact(m) {
-			if rec := e.contactAttempts[m.ContactEscalatedAt]; rec.urgent != nil {
-				close(rec.urgent)
-				rec.urgent = nil
-				e.contactAttempts[m.ContactEscalatedAt] = rec
-			}
-		}
-		if closedClaude {
-			slog.Info("Claude Desktop wake unavailable; human contact recorded", "agent", agent,
-				"app_session", alert.appSession, "cli_session", alert.thread, "sender", m.From,
-				"msg", m.Serial, "contact", m.ContactEscalatedAt)
-			if c := e.state.Contacts[m.ContactEscalatedAt]; c != nil && !c.NotifiedAt.IsZero() &&
-				e.notifyAppOpenSender(l, m, "delivery to the original app is unconfirmed", now) {
-				e.wakeAppContactSender(m, now)
-			}
-		}
+		e.recordContactEscalation(l, m, alert, closedClaude)
+	}
+}
+
+func (e *Engine) recordContactEscalation(l *core.Agent, m *core.Message, alert appBindingAlert, closedClaude bool) {
+	op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
+	if closedClaude {
+		op.Kind, op.ContactReason, op.AgentID = core.OpContactDiagnosed, core.ContactClaudeUnavailable, l.ID
+	}
+	if err := e.state.Admit(op); err != nil {
+		slog.Debug("contact escalation is no longer eligible", "agent", l.ID, "msg", m.Serial, "err", err)
+		return
+	}
+	now := time.Now()
+	if _, err := e.applyAndLedger(op, now); err != nil {
+		slog.Error("could not record contact escalation", "agent", l.ID, "msg", m.Serial, "err", err)
+		return
+	}
+	if rec := e.contactAttempts[m.ContactEscalatedAt]; rec.urgent != nil && highPriorityContact(m) {
+		close(rec.urgent)
+		rec.urgent = nil
+		e.contactAttempts[m.ContactEscalatedAt] = rec
+	}
+	if !closedClaude {
+		return
+	}
+	slog.Info("Claude Desktop wake unavailable; human contact recorded", "agent", l.ID,
+		"app_session", alert.appSession, "cli_session", alert.thread, "sender", m.From,
+		"msg", m.Serial, "contact", m.ContactEscalatedAt)
+	if c := e.state.Contacts[m.ContactEscalatedAt]; c != nil && !c.NotifiedAt.IsZero() &&
+		e.notifyAppOpenSender(l, m, "delivery to the original app is unconfirmed", now) {
+		e.wakeAppContactSender(m, now)
 	}
 }
 

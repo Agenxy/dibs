@@ -40,30 +40,40 @@ func (e *Engine) recordCommandWritten(cmd wakePlan, started time.Time) {
 		if e.commandWritten == nil {
 			e.commandWritten = map[string]bool{}
 		}
-		var unread []uint64
-		for _, key := range cmd.commandKeys {
-			e.commandWritten[key] = true
-			kind, item, _ := strings.Cut(key, ":")
-			who, raw, _ := strings.Cut(item, "\x00")
-			serial, _ := strconv.ParseUint(raw, 10, 64)
-			m := e.state.Messages[serial]
-			if queued && kind == "mail" && who == l.ID && unreadContactAsk(m) && e.mailBelongsTo(m, l) {
-				unread = append(unread, serial)
-			}
-			// The command may finish after a hook or authenticated read has
-			// already presented this FYI. Its delayed metadata receipt adds
-			// nothing then; do not rewrite coordination state on reconnect.
-			if kind == "mail" && who == l.ID && m != nil && m.Type == core.MsgNotify && !e.notifyPresented(l.ID, m) {
-				if err := e.announceFYI(l, serial, time.Now()); err != nil {
-					return core.Result{"error": err}
-				}
-			}
+		unread, err := e.markCommandKeysWritten(cmd.commandKeys, l, queued)
+		if err != nil {
+			return core.Result{"error": err}
 		}
 		if queued {
 			e.noteQueuedMailOffer(cmd, started, unread)
 		}
 		return nil
 	})
+}
+
+func (e *Engine) markCommandKeysWritten(keys []string, l *core.Agent, queued bool) ([]uint64, error) {
+	var unread []uint64
+	for _, key := range keys {
+		e.commandWritten[key] = true
+		kind, item, _ := strings.Cut(key, ":")
+		who, raw, _ := strings.Cut(item, "\x00")
+		if kind != "mail" || who != l.ID {
+			continue
+		}
+		serial, _ := strconv.ParseUint(raw, 10, 64)
+		m := e.state.Messages[serial]
+		if queued && unreadContactAsk(m) && e.mailBelongsTo(m, l) {
+			unread = append(unread, serial)
+		}
+		// A hook or read may already have presented the FYI while the command ran.
+		if m == nil || m.Type != core.MsgNotify || e.notifyPresented(l.ID, m) {
+			continue
+		}
+		if err := e.announceFYI(l, serial, time.Now()); err != nil {
+			return nil, err
+		}
+	}
+	return unread, nil
 }
 
 // An observed app incarnation is a new receiving endpoint. Forget only these

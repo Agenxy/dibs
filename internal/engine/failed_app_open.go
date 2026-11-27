@@ -321,14 +321,13 @@ func (e *Engine) rebuildAppContactSenders() {
 			continue
 		}
 		recipient := e.state.Agents[c.Recipient]
-		if recipient == nil || (surfaceOf(recipient) != harnessenv.ChatGPTApp &&
-			surfaceOf(recipient) != harnessenv.ClaudeDesktop && surfaceOf(recipient) != harnessenv.ChatGPTCloudExec) {
-			continue
-		}
 		if c.Reason == core.ContactClaudeUnavailable && c.NotifiedAt.IsZero() {
 			continue // the next posting attempt will produce the sender's outcome
 		}
-		e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)
+		switch surfaceOf(recipient) {
+		case harnessenv.ChatGPTApp, harnessenv.ClaudeDesktop, harnessenv.ChatGPTCloudExec:
+			e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)
+		}
 	}
 }
 
