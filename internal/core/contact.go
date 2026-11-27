@@ -54,7 +54,8 @@ func admitContactReason(op *Op) error {
 	}
 	if op.Kind == OpContactDiagnosed && !op.ContactMailboxFull {
 		switch op.ContactReason {
-		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull, ContactQueueStateUnknown, ContactClaudeUnavailable:
+		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull,
+			ContactQueueStateUnknown, ContactClaudeUnavailable:
 			return nil
 		}
 	}
