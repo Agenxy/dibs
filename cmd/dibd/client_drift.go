@@ -27,6 +27,11 @@ type clientDriftWarning struct {
 	fix  string
 }
 
+var (
+	clientDriftNotificationAvailable = notify.Available
+	postClientDriftNotification      = notify.Banner
+)
+
 func localClientDrift() []clientDriftWarning {
 	var warnings []clientDriftWarning
 	home, _ := os.UserHomeDir()
@@ -55,11 +60,13 @@ func localClientDrift() []clientDriftWarning {
 
 func monitorClientDrift(ctx context.Context, eng *engine.Engine, dir string) {
 	seen := make(map[clientDriftWarning]bool)
+	hooks := codexTrustObserver()
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
 	for ctx.Err() == nil {
 		current := make(map[clientDriftWarning]bool)
-		for _, warning := range localClientDrift() {
+		warnings := append(localClientDrift(), hooks.observe(ctx)...)
+		for _, warning := range warnings {
 			current[warning] = true
 			if !seen[warning] {
 				slog.Warn(warning.what, "client_kind", warning.kind, "fix", warning.fix)
@@ -80,7 +87,7 @@ func monitorClientDrift(ctx context.Context, eng *engine.Engine, dir string) {
 // must not send the same kind/build notice again. The local WARN remains the
 // evidence if posting fails. No bridge notice enters this path.
 func notifyClientDrift(dir string, warning clientDriftWarning) {
-	if !notify.Available() {
+	if !clientDriftNotificationAvailable() {
 		return
 	}
 	state := filepath.Join(dir, "client-version-notices")
@@ -95,7 +102,7 @@ func notifyClientDrift(dir string, warning clientDriftWarning) {
 		return
 	}
 	_ = f.Close()
-	if err := notify.Banner("Dibs client version warning", "", warning.what+"\n"+warning.fix); err != nil {
+	if err := postClientDriftNotification("Dibs client version warning", "", warning.what+"\n"+warning.fix); err != nil {
 		slog.Debug("client version notice could not be posted", "client_kind", warning.kind, "err", err)
 	}
 }

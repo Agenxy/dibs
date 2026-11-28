@@ -66,6 +66,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alert for its still-unread actionable mail. Workspace verification accepts
   linked Git worktrees using host-qualified repository evidence and reports
   a deleted working directory explicitly instead of a generic mismatch.
+- The daemon checks Dibs hook approval at startup and when its resolved
+  Codex runtime changes. It alerts on modified hooks, distinguishing exact
+  shipped source bytes from different or unverified content. Inspection is
+  read-only: it never records approval or changes a disabled hook's switch.
+- `dibs codex-hooks --json` provides bounded hook approval/content metadata
+  without source paths, hook inputs or approval hashes, and refuses `--trust`.
 - Send receipts and the board show successful ChatGPT queue admission when
   direct input is unavailable, with separate outcomes for native adapter
   failure and a thread the router reports as unloaded.

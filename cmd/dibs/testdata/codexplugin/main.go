@@ -174,6 +174,11 @@ func serveHooks() {
 			continue
 		}
 		var result any = map[string]any{}
+		if req.Method == "config/batchWrite" {
+			if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "unexpected-trust-write"), []byte("written"), 0o600); err != nil {
+				panic(err)
+			}
+		}
 		if req.Method == "hooks/list" {
 			if os.Getenv("DIBS_TEST_HOOK_PIPE_CONTROL") != "" && os.Getenv("DIBS_TEST_HOOK_PIPE_PHASE") == "hooks/list" {
 				hookPipeFixture(false)
@@ -194,6 +199,7 @@ func serveHooks() {
 						"key": "dibs@dibs:hooks.json:" + event + ":0:0", "eventName": event,
 						"handlerType": "mcpTool", "server": "dibs", "tool": "hook_poll", "pluginId": "dibs@dibs",
 						"currentHash": "sha256:fixture", "trustStatus": status, "enabled": true,
+						"sourcePath": os.Getenv("DIBS_HOOK_FIXTURE_SOURCE"),
 					})
 				}
 			}
