@@ -39,6 +39,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Antigravity contact alerts name a command awaiting approval when Dibs can
+  confirm the conversation's waiting state. `diagnose_wake` reports the
+  reason alongside the contact receipt.
 - An unreachable Claude Desktop session now triggers a contact alert for
   unread requests and questions. Wake diagnostics report the unavailable
   route and the alert's posting state. When Dibs can resolve the app session,

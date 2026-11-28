@@ -26,6 +26,25 @@ No mail body was used. `get-conversation-metadata` returned data for the same
 ID on the same live hub. A future wake sends only to an existing conversation
 and treats a timeout or ambiguous reply as unknown.
 
+## Command approval contacts
+
+On 2026-11-27, Antigravity 2.35.2's `agentapi get-conversation-metadata`
+returned workspace metadata for two conversations awaiting command approval.
+Its reply contained no step state, and the installed `agentapi` help listed
+no trajectory command. The two conversation databases each had a
+`run_command` step in `WAITING` (`step_type=132`, `status=9`). One had a newer
+pending command after the waiting step.
+
+When a later wake finds previously accepted mail still unread, Dibs can
+read the step type and status for the bound conversation with system SQLite.
+It uses a bounded `mode=ro&immutable=1` query and checks for an active journal
+or a changed database. A pending or queued suffix leaves the last waiting
+step actionable. A more recent running or completed step, a missing or
+unreadable database, or an ambiguous snapshot retains the general contact
+wording. The observed cause is recorded as `antigravity_command_approval`
+in the contact escalation and in `diagnose_wake.contact_escalation.reason`.
+Approval and rejection stay in the Antigravity conversation.
+
 ## Binding evidence
 
 The app did not discover a temporary MCP server after a configuration edit,

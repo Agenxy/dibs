@@ -235,6 +235,8 @@ func contactReasonText(reason core.ContactReason) string {
 		return "Dibs could not confirm the thread's state or whether its queued notice was delivered."
 	case core.ContactClaudeUnavailable:
 		return "The original Claude Desktop session has no available background input route."
+	case core.ContactAntigravityApproval:
+		return "This conversation is waiting for your approval of a command in Antigravity."
 	}
 	return ""
 }

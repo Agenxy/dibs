@@ -15,11 +15,12 @@ type ContactReason string
 
 // Known diagnoses for unconfirmed native app delivery.
 const (
-	ContactTurnsEnded        ContactReason = "codex_turns_ended"
-	ContactCompactionFailed  ContactReason = "codex_compaction_failed"
-	ContactContextFull       ContactReason = "codex_context_full"
-	ContactQueueStateUnknown ContactReason = "codex_queue_state_unknown"
-	ContactClaudeUnavailable ContactReason = "claude_desktop_unreachable"
+	ContactTurnsEnded          ContactReason = "codex_turns_ended"
+	ContactCompactionFailed    ContactReason = "codex_compaction_failed"
+	ContactContextFull         ContactReason = "codex_context_full"
+	ContactQueueStateUnknown   ContactReason = "codex_queue_state_unknown"
+	ContactClaudeUnavailable   ContactReason = "claude_desktop_unreachable"
+	ContactAntigravityApproval ContactReason = "antigravity_command_approval"
 )
 
 // ContactEscalation is replayable proof that delivery remained unconfirmed and Dibs
@@ -55,7 +56,7 @@ func admitContactReason(op *Op) error {
 	if op.Kind == OpContactDiagnosed && !op.ContactMailboxFull {
 		switch op.ContactReason {
 		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull,
-			ContactQueueStateUnknown, ContactClaudeUnavailable:
+			ContactQueueStateUnknown, ContactClaudeUnavailable, ContactAntigravityApproval:
 			return nil
 		}
 	}
