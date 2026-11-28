@@ -59,3 +59,17 @@ That first migration and later genuine content changes require a person's review
 `dibs codex-hooks --trust` or Codex `/hooks`. Verification of installed files is
 reported separately from hook approval and from actual delivery. An unverified
 approval probe is reported as unknown, never as trusted.
+
+## Stalled work notices
+
+Dibs can tell a coordinator about declared work after an observed wake offer
+when work has aged past the board's stalled threshold and no finishing hook
+has been observed for that session. The notice reports the declaration and
+its age. An authenticated check-in or a committed lifecycle event can observe
+this condition. On a quiet board it waits for the next such event. A pending
+observation survives a daemon restart. Observations first made after restart
+require fresh wake evidence.
+
+The notice includes `dibs codex-hooks` to inspect that machine. Missing hook
+traffic cannot identify whether trust changed. The host's existing hook-trust
+monitor handles positive approval evidence and its separate operator notice.

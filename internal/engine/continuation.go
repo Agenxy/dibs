@@ -68,15 +68,51 @@ type continuation struct {
 	recent  []time.Time // every continuation inside continuationWindow
 }
 
-// noteDibsStartedTurn records that a wake Dibs delivered started this agent's
-// next turn, which is what makes continuing it legitimate.
-func (e *Engine) noteDibsStartedTurn(agent string, now time.Time) {
+type dibsTurnRecord struct {
+	at, offeredAt, finishingHookAt time.Time
+	created                        uint64
+	session, host                  string
+}
+
+// noteDibsStartedTurn records the delivery used by continuation. For stall
+// reporting, a native steer cannot identify who started an already active
+// turn. A native start receipt or successful Codex queue command is evidence
+// of Dibs offering work, independent of any eventual finishing hook.
+func (e *Engine) noteDibsStartedTurn(agent string, plan wakePlan, started time.Time) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	if e.wakers.dibsTurn == nil {
-		e.wakers.dibsTurn = map[string]time.Time{}
+	record := e.wakers.dibsTurn[agent]
+	if record.created != plan.createdSerial || record.session != plan.session || record.host != plan.host {
+		record = dibsTurnRecord{created: plan.createdSerial, session: plan.session, host: plan.host}
 	}
-	e.wakers.dibsTurn[agent] = now
+	record.at = time.Now()
+	if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "accepted" ||
+		plan.queuedDelivery() {
+		record.offeredAt = started
+	}
+	e.wakers.storeDibsTurn(agent, record)
+}
+
+func (w *wakers) storeDibsTurn(agent string, record dibsTurnRecord) {
+	if w.dibsTurn == nil {
+		w.dibsTurn = map[string]dibsTurnRecord{}
+	}
+	w.dibsTurn[agent] = record
+}
+
+func (e *Engine) noteFinishingHook(l *core.Agent, now time.Time) {
+	if wakeHarness(l) != "codex" {
+		return
+	}
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	record := e.wakers.dibsTurn[l.ID]
+	session, host := wakeSessionOf(l), e.remoteHostOf(l)
+	if record.created != l.CreatedSerial || record.session != session || record.host != host {
+		record = dibsTurnRecord{created: l.CreatedSerial, session: session, host: host}
+	}
+	record.finishingHookAt = now
+	e.wakers.storeDibsTurn(l.ID, record)
 }
 
 // notePersonPrompted forgets that: a person is in the conversation now.
@@ -186,7 +222,7 @@ func continuationReason(open []core.Slot, n int) string {
 func (e *Engine) continueDeclaredWork(l *core.Agent, now time.Time) (string, bool) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	_, started := e.wakers.dibsTurn[l.ID]
+	started := !e.wakers.dibsTurn[l.ID].at.IsZero()
 	if e.wakers.continued == nil {
 		e.wakers.continued = map[string]continuation{}
 	}

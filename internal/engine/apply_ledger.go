@@ -111,6 +111,7 @@ func (e *Engine) applyAndLedgerWithReceipt(
 		e.noteHumanCleanup(evs)
 		e.resolveContactsAfter(evs, now)
 		e.resolveChangedDiagnosedBindings(bindings, now)
+		e.observeStalledWorkEvents(evs, now)
 	}
 	if op.Kind == core.OpPutBlob {
 		e.protectBlobRegistration(op.Blob)

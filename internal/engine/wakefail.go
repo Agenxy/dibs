@@ -208,7 +208,7 @@ func (e *Engine) runWakeAndReportPlan(cmd *wakePlan, agent string) bool {
 		} else {
 			e.recordCommandWritten(*cmd, started)
 		}
-		e.noteDibsStartedTurn(agent, time.Now())
+		e.noteDibsStartedTurn(agent, *cmd, started)
 		e.clearWakeAttempts(agent)
 		e.forgetWakeFailures(agent)
 		return true

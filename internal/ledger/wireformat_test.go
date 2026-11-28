@@ -115,7 +115,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"contact_reason":   true,
 		"notify_announced": true, "notify_consumption": true,
 		// Atomic daemon stall notice and its request watermark, additive only.
-		"declaration_serial": true,
+		"declaration_serial": true, "stalled_worker": true, "stalled_worker_host": true,
 		// App-restart observation and coordinator settings are new op kinds,
 		// not reinterpretations of older fields. These names are frozen once
 		// the first restart/setting is written to the ledger.
@@ -496,7 +496,7 @@ const (
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
 	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
-	frozenOpFingerprint       = "sha256:3e69d7473198559b"
+	frozenOpFingerprint       = "sha256:46d5c7ef1bb57c3d"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

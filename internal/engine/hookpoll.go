@@ -204,6 +204,9 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 			e.turnEnded = map[string]time.Time{}
 		}
 		e.turnEnded[l.ID] = time.Now()
+		if event == "Stop" || event == "SessionEnd" {
+			e.noteFinishingHook(l, e.turnEnded[l.ID])
+		}
 		e.noteSocketIdle(l, e.turnEnded[l.ID])
 		if event == "Stop" {
 			e.releaseUnreadQueuedOffer(l)

@@ -423,6 +423,12 @@ func (e *Engine) execWithReceipt(
 			Hint: "call through your own local harness bridge with your agent token",
 		}
 	}
+	if op.Kind == core.OpStalledWorkNotified || op.Kind == core.OpStalledWorkObserved {
+		return nil, &core.Error{
+			Code: "E_NOT_PERMITTED", Msg: "the daemon reports its own stalled-work observations",
+			Hint: "use check_in to see the board's current work",
+		}
+	}
 	if op.Kind == core.OpContactDiagnosed || op.Kind == core.OpContactJoin {
 		return nil, &core.Error{
 			Code: "E_NOT_PERMITTED", Msg: "the daemon records its own native app diagnosis",

@@ -72,7 +72,7 @@ func finishedWakeSources(op *Op) []uint64 {
 // SendsMessage includes the daemon's atomic notice operations. Derived
 // history and human delivery must recognize the same birth as the fold does.
 func SendsMessage(kind string) bool {
-	return kind == OpSendMessage || kind == OpStallNotified || finishedWakeNotice(kind)
+	return kind == OpSendMessage || kind == OpStallNotified || kind == OpStalledWorkNotified || finishedWakeNotice(kind)
 }
 
 func (s *State) applyFinishedWakeNotified(actor *Agent, op *Op, now time.Time) (Result, []Event, error) {

@@ -141,4 +141,9 @@ func (e *Engine) trimBoardTurns() {
 			delete(e.wakers.appBoardTurns, id)
 		}
 	}
+	for id := range e.wakers.dibsTurn {
+		if e.state.Agents[id].Gone() {
+			delete(e.wakers.dibsTurn, id)
+		}
+	}
 }

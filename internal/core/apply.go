@@ -141,6 +141,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applyMarkDelivered(op, now)
 	case OpContactJoin:
 		return s.applyContactJoin(op, now)
+	case OpStalledWorkObserved:
+		return s.applyStalledWorkObserved(op, now)
 	case OpContactEscalate, OpContactDiagnosed:
 		return s.applyContactEscalate(op, now)
 	case OpContactNotified:
@@ -319,6 +321,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applySend(l, op, now)
 	case OpStallNotified:
 		res, evs, err = s.applyStallNotified(l, op, now)
+	case OpStalledWorkNotified:
+		res, evs, err = s.applyStalledWorkNotified(l, op, now)
 	case OpFinishedWakeNotified, OpFinishedWakeBatchNotified:
 		res, evs, err = s.applyFinishedWakeNotified(l, op, now)
 	case OpRespond:
