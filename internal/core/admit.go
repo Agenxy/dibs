@@ -60,6 +60,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitStallNotice(op); err != nil {
 		return err
 	}
+	if err := s.admitStalledWorkNotice(op); err != nil {
+		return err
+	}
 	if err := s.admitFinishedWakeNotice(op); err != nil {
 		return err
 	}

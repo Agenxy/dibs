@@ -531,8 +531,9 @@ type Agent struct {
 	ArchivedAt       time.Time `json:"archived_at,omitzero"`
 	// TruncatedBefore is the mailbox-loss watermark: mail with serial below
 	// it may have been evicted unconsumed (SPEC §8).
-	TruncatedBefore uint64          `json:"truncated_before_serial,omitempty"`
-	Slots           map[string]Slot `json:"slots,omitempty"`
+	TruncatedBefore   uint64             `json:"truncated_before_serial,omitempty"`
+	Slots             map[string]Slot    `json:"slots,omitempty"`
+	StalledWorkNotice *StalledWorkNotice `json:"stalled_work_notice,omitempty"`
 
 	// StaleReason is WHY this agent stopped counting as live, recorded at the
 	// moment it transitioned.

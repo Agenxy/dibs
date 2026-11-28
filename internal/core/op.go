@@ -267,6 +267,9 @@ type Op struct {
 	ContactNoticeThroughSerial uint64 `json:"contact_notice_through_serial,omitempty"`
 	// The work version the daemon's stall notice describes. Frozen on disk.
 	DeclarationSerial uint64 `json:"declaration_serial,omitempty"`
+	// StalledWorker identifies the row whose declared work the daemon observed.
+	StalledWorker     string `json:"stalled_worker,omitempty"`
+	StalledWorkerHost string `json:"stalled_worker_host,omitempty"`
 	// Zero keeps historical read_mail's read-all semantics. A bounded inline
 	// delivery records only the fully quoted prefix, never a later pointer.
 	OutcomeThroughSerial   uint64       `json:"outcome_through_serial,omitempty"`

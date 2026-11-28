@@ -114,7 +114,7 @@ func (s *State) admitMailboxCapacity(op *Op) error {
 	if !op.MailboxCapacity {
 		return nil
 	}
-	if op.Kind != OpSendMessage && !finishedWakeNotice(op.Kind) {
+	if op.Kind != OpSendMessage && op.Kind != OpStalledWorkNotified && !finishedWakeNotice(op.Kind) {
 		return errf("E_BAD_ARG", "mailbox capacity is recorded on sends only", "invalid capacity carrier")
 	}
 	if s.AgentByToken(op.Token) == nil {

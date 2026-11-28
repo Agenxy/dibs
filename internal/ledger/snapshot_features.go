@@ -21,6 +21,22 @@ type snapshotFeature struct {
 
 var snapshotFeatures = []snapshotFeature{
 	{
+		name: "stalled-work-notice/v1",
+		fields: []string{
+			"core.Agent.StalledWorkNotice", "core.StalledWorkNotice.DeclarationSerial",
+			"core.StalledWorkNotice.NoticeSerial", "core.StalledWorkNotice.Session",
+			"core.StalledWorkNotice.Host", "core.StalledWorkNotice.ObservedAt",
+		},
+		present: func(st *core.State) bool {
+			for _, agent := range st.Agents {
+				if agent != nil && agent.StalledWorkNotice != nil {
+					return true
+				}
+			}
+			return false
+		},
+	},
+	{
 		name:   "antigravity-wake-binding/v1",
 		fields: []string{"core.Agent.AntigravityBindingSerial"},
 		present: func(st *core.State) bool {

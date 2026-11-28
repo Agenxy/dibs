@@ -57,7 +57,7 @@ type wakers struct {
 	relocations map[string]RelocateCommand
 	// dibsTurn: agents whose current turn a Dibs wake started, and continued:
 	// what each was last continued for. See continuation.go.
-	dibsTurn  map[string]time.Time
+	dibsTurn  map[string]dibsTurnRecord
 	continued map[string]continuation
 	// queued: when a command wake last succeeded for each agent. See
 	// queuedwake.go.
@@ -1342,7 +1342,8 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) (accepted bool) {
 				}
 				observation.Delivery = queueFallbackDelivery(plan.nativeOutcome)
 				e.noteQueueObservation(*plan, agent, observation)
-			})
+			},
+		)
 		if !plan.queueThreadGone() && !plan.commandOutcome.NoRetry && !plan.commandOutcome.Deferred {
 			e.noteCommandOutcome(agent, plan.argv, plan.commandOutcome.OK)
 		}

@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -221,7 +222,12 @@ func (e *Engine) dibsAgent(ctx context.Context) (agent, token string, err error)
 	// idMu, never mu: this holds a lock across e.Do. See faultState.idMu.
 	e.faults.idMu.Lock()
 	defer e.faults.idMu.Unlock()
-	res, err := e.Do(ctx, &core.Op{
+	res, err := e.Do(ctx, dibsRegistration())
+	return dibsRegistrationResult(res, err)
+}
+
+func dibsRegistration() *core.Op {
+	return &core.Op{
 		// The one registration allowed to be this identity, like the human's.
 		HumanMint: true,
 		Kind:      core.OpRegister, Name: dibsName,
@@ -236,7 +242,10 @@ func (e *Engine) dibsAgent(ctx context.Context) (agent, token string, err error)
 		Agent: &core.AgentInfo{
 			Harness: "dibs", Surface: "daemon", Host: hostname(),
 		},
-	})
+	}
+}
+
+func dibsRegistrationResult(res core.Result, err error) (agent, token string, resultErr error) {
 	if err != nil {
 		return "", "", err
 	}
@@ -329,10 +338,10 @@ func (e *Engine) coordinatorOrHuman() string {
 // a report nobody owns.
 //
 // Must run inside the loop.
-func (e *Engine) coordinatorsByLiveness() (live, dormant string) {
+func (e *Engine) coordinatorsByLiveness(exclude ...string) (live, dormant string) {
 	for id, l := range e.state.Agents {
 		if l.Status == core.StatusClosed || l.Status == core.StatusArchived ||
-			!l.IsCoordinator() {
+			!l.IsCoordinator() || slices.Contains(exclude, id) {
 			continue
 		}
 		if l.Status == core.StatusActive {

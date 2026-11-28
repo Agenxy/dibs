@@ -13,6 +13,9 @@ func (e *Engine) prepareMailboxPage(op *core.Op, actor *core.Agent, now time.Tim
 	if op.Kind != core.OpAckBoard || !op.MailboxPage || actor == nil {
 		return nil, nil
 	}
+	if op.MailboxCursor == "" {
+		e.observeStalledWork(now, actor.ID, "")
+	}
 	p, err := e.mailboxPage(actor, op.MailboxCursor, op.MailboxLimit, now)
 	if err != nil {
 		return nil, err

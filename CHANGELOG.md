@@ -39,6 +39,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- An authenticated check-in or agent lifecycle event now surfaces stalled
+  Codex declarations to a coordinator when Dibs offered a wake and observed
+  no finishing hook. The notice names the work and survives replay and mail
+  expiry without repeating for the same declaration version.
 - Antigravity notices accepted during a running turn defer human contact.
   Dibs rechecks the conversation and alerts only for mail still unread after
   observed completion.

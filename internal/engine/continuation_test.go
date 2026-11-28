@@ -100,7 +100,7 @@ func (b *continuationBoard) wake(t *testing.T) {
 		r, err := b.e.query(b.ctx, func() core.Result {
 			b.e.wakers.mu.Lock()
 			defer b.e.wakers.mu.Unlock()
-			return core.Result{"done": b.e.wakers.dibsTurn["worker"].After(sentAt) && !b.e.wakers.running["worker"]}
+			return core.Result{"done": b.e.wakers.dibsTurn["worker"].at.After(sentAt) && !b.e.wakers.running["worker"]}
 		})
 		if err != nil {
 			t.Fatal(err)
