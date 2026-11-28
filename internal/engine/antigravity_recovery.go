@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 	"time"
 
@@ -49,7 +50,15 @@ type antigravityAcceptance struct {
 	created, binding    uint64
 	session, cwd, epoch string
 	items               map[uint64]bool
+	nextCheck           time.Time
+	check               *antigravityContactCheck
 }
+
+const antigravityContactRecheck = 30 * time.Second
+
+// The writer owns the check token. A new acceptance invalidates its result
+// while still reserving the existing worker until that check completes.
+type antigravityContactCheck struct{ superseded bool }
 
 func unreadAntigravityContact(m *core.Message) bool {
 	return m != nil && m.State == core.MsgStatePending && !m.Consumed && m.ContactEligible()
@@ -89,6 +98,13 @@ func (e *Engine) noteAntigravityAccepted(p wakePlan) {
 	if e.antigravityAccepted == nil {
 		e.antigravityAccepted = map[string]antigravityAcceptance{}
 	}
+	if prior := e.antigravityAccepted[p.agent]; !prior.nextCheck.IsZero() && prior.matches(e, l) {
+		maps.Copy(c.items, prior.items)
+		c.nextCheck, c.check = prior.nextCheck, prior.check
+		if c.check != nil {
+			c.check.superseded = true
+		}
+	}
 	e.antigravityAccepted[p.agent] = c
 }
 
@@ -98,17 +114,14 @@ func (e *Engine) noteAntigravityAccepted(p wakePlan) {
 func (e *Engine) contactUnreadAntigravityAcceptance(ctx context.Context, plan wakePlan, agent string) {
 	res, err := e.query(ctx, func() core.Result {
 		c, ok := e.antigravityAccepted[agent]
-		return core.Result{"unread_acceptance": ok && e.antigravityContactCurrent(plan, agent, c)}
+		return core.Result{"unread_acceptance": ok && c.nextCheck.IsZero() && e.antigravityContactCurrent(plan, agent, c)}
 	})
 	if err != nil || res["unread_acceptance"] != true {
 		return
 	}
-	var reason core.ContactReason
-	if antigravity.WaitingForCommandApproval(ctx, plan.thread) {
-		reason = core.ContactAntigravityApproval
-	}
+	state := antigravity.ObserveConversation(ctx, plan.thread)
 	_, _ = e.query(ctx, func() core.Result {
-		e.escalateUnreadAntigravityAcceptance(plan, agent, reason)
+		e.applyAntigravityContactObservation(plan, agent, state)
 		return nil
 	})
 }
@@ -119,11 +132,24 @@ func (e *Engine) antigravityContactCurrent(plan wakePlan, agent string, c antigr
 		cwdOf(l) == plan.cwd && e.originalNativeWakeOwed(plan, agent)
 }
 
-func (e *Engine) escalateUnreadAntigravityAcceptance(plan wakePlan, agent string, reason core.ContactReason) {
+func (e *Engine) applyAntigravityContactObservation(plan wakePlan, agent string, state antigravity.ConversationState) {
 	c, ok := e.antigravityAccepted[agent]
-	if !ok || !e.antigravityContactCurrent(plan, agent, c) {
+	if !ok || !c.nextCheck.IsZero() || !e.antigravityContactCurrent(plan, agent, c) {
 		return
 	}
+	if state == antigravity.ConversationBusy {
+		c.nextCheck = time.Now().Add(antigravityContactRecheck)
+		e.antigravityAccepted[agent] = c
+		return
+	}
+	var reason core.ContactReason
+	if state == antigravity.ConversationApproval {
+		reason = core.ContactAntigravityApproval
+	}
+	e.escalateUnreadAntigravityAcceptance(agent, c, reason)
+}
+
+func (e *Engine) escalateUnreadAntigravityAcceptance(agent string, c antigravityAcceptance, reason core.ContactReason) {
 	l := e.state.Agents[agent]
 	ids := make([]uint64, 0, len(c.items))
 	for id := range c.items {
@@ -145,6 +171,43 @@ func (e *Engine) escalateUnreadAntigravityAcceptance(plan wakePlan, agent string
 		}
 	}
 	delete(e.antigravityAccepted, agent)
+}
+
+// The existing sweep rechecks held contacts off the writer. A recheck never
+// submits another wake. A missing snapshot cannot establish completion.
+func (e *Engine) reconsiderAntigravityContacts(now time.Time) {
+	for agent, c := range e.antigravityAccepted {
+		if c.nextCheck.IsZero() || c.nextCheck.After(now) || c.check != nil ||
+			!c.matches(e, e.state.Agents[agent]) {
+			continue
+		}
+		c.nextCheck, c.check = now.Add(antigravityContactRecheck), &antigravityContactCheck{}
+		e.antigravityAccepted[agent] = c
+		finish := e.startWakeWorker(agent, "antigravity-contact-recheck")
+		go func() {
+			defer finish()
+			ctx := e.deliveryContext()
+			state := antigravity.ObserveConversation(ctx, c.session)
+			_, _ = e.query(ctx, func() core.Result {
+				e.finishAntigravityContactCheck(agent, c.check, state)
+				return nil
+			})
+		}()
+	}
+}
+
+func (e *Engine) finishAntigravityContactCheck(
+	agent string, check *antigravityContactCheck, state antigravity.ConversationState,
+) {
+	c := e.antigravityAccepted[agent]
+	if c.check != check || !c.matches(e, e.state.Agents[agent]) {
+		return
+	}
+	c.check = nil
+	e.antigravityAccepted[agent] = c
+	if !check.superseded && state == antigravity.ConversationQuiet {
+		e.escalateUnreadAntigravityAcceptance(agent, c, "")
+	}
 }
 
 func (e *Engine) observeAntigravityHub(ctx context.Context, epoch string) {

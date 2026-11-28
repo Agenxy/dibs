@@ -39,7 +39,7 @@ func TestAntigravityContactReportsCommandApproval(t *testing.T) {
 	}
 }
 
-func writeAntigravityApprovalConversation(t *testing.T, steps string, hotJournal bool) {
+func writeAntigravityApprovalConversation(t *testing.T, steps string, hotJournal bool) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -58,7 +58,14 @@ func writeAntigravityApprovalConversation(t *testing.T, steps string, hotJournal
 		if err := os.WriteFile(db+"-wal", []byte("active journal placeholder"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// A stale journal still disqualifies the immutable snapshot, but does
+		// not establish a current turn.
+		past := time.Now().Add(-time.Hour)
+		if err := os.Chtimes(db+"-wal", past, past); err != nil {
+			t.Fatal(err)
+		}
 	}
+	return db
 }
 
 func testAntigravityApprovalContact(t *testing.T, reason string) {

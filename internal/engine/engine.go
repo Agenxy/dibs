@@ -1227,6 +1227,7 @@ func (e *Engine) sweep(now time.Time) {
 	e.dropNoticesWithoutMail()
 	e.reconsiderNativeTurns(now)
 	e.reconsiderAcceptedContacts(now)
+	e.reconsiderAntigravityContacts(now)
 	e.reconsiderQueuedOpenContacts(now)
 }
 

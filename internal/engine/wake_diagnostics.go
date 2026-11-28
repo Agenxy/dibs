@@ -119,6 +119,9 @@ func (e *Engine) localWakeDiagnostics(l *core.Agent, target wakeDiagnosticTarget
 	if d, ok := e.currentWakeDiagnostic(target); ok {
 		out["last_attempt"] = d
 	}
+	if c := e.antigravityAccepted[l.ID]; !c.nextCheck.IsZero() && c.matches(e, l) {
+		out["contact_deferred"] = core.Result{"reason": "turn in progress", "next_check_at": c.nextCheck}
+	}
 	if alert, ok := e.closedClaudeBinding(l); ok && alert.appSession != "" {
 		out["app_session"] = alert.appSession
 	}

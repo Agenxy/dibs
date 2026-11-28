@@ -38,12 +38,18 @@ pending command after the waiting step.
 When a later wake finds previously accepted mail still unread, Dibs can
 read the step type and status for the bound conversation with system SQLite.
 It uses a bounded `mode=ro&immutable=1` query and checks for an active journal
-or a changed database. A pending or queued suffix leaves the last waiting
-step actionable. A more recent running or completed step, a missing or
-unreadable database, or an ambiguous snapshot retains the general contact
-wording. The observed cause is recorded as `antigravity_command_approval`
+or a changed database. A pending suffix leaves the last waiting step
+actionable. The observed cause is recorded as `antigravity_command_approval`
 in the contact escalation and in `diagnose_wake.contact_escalation.reason`.
 Approval and rejection stay in the Antigravity conversation.
+
+A running, generating, or queued tail step, or a nonempty WAL updated within
+three minutes, defers contact. `diagnose_wake.contact_deferred` reports the
+turn in progress and the next scheduled check. The existing daemon sweep
+rechecks this cohort off the writer every 30 seconds. A completed step in a
+stable snapshot allows escalation only for still-unread mail. An unavailable
+or ambiguous snapshot preserves the deferral, and the recheck submits no
+new wake or input.
 
 ## Binding evidence
 
