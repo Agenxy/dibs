@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/plugins"
 	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/sibling"
 )
@@ -36,38 +37,74 @@ import (
 // `hooks.state.<key>.trusted_hash`. Nothing here guesses a hash or edits
 // config.toml by hand, and only hooks whose source is Dibs are touched. It is
 // an admin verb: a person runs it, and it prints exactly what it trusted.
-const codexHooksHelp = `dibs codex-hooks [--trust]
+const codexHooksHelp = `dibs codex-hooks [--trust | --json]
 
 Lists the Dibs hooks as Codex sees them: event, source, and whether Codex has
 trusted them, which since Codex 0.153 decides whether they run at all.
 
   --trust    record trust for the Dibs hooks, the way Codex's own /hooks does,
              so mail is delivered at Codex's lifecycle boundaries
+  --json     read-only hook approval and shipped-content report for diagnostics
 
 Reads and writes ~/.codex/config.toml through Codex's app-server protocol; the
 binary is found on PATH, in the usual install directories, or inside the
 ChatGPT app. Trusts nothing that is not a Dibs hook.
 `
 
-// chatGPTCodex is where the desktop app keeps its own Codex, which is often
-// newer than the one on PATH and is the one its sessions run.
-const chatGPTCodex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
-
 func codexHooksCmd(args []string) error {
 	trust := false
+	jsonOutput := false
 	for _, a := range args {
 		switch a {
 		case "--trust":
 			trust = true
+		case "--json":
+			jsonOutput = true
 		case "--help", "-h":
-			fmt.Println("usage: dibs codex-hooks [--trust]")
+			fmt.Println("usage: dibs codex-hooks [--trust | --json]")
 			fmt.Print(codexHooksHelp)
 			return nil
 		default:
 			return fmt.Errorf("dibs codex-hooks: unknown argument %q\n\n%s", a, codexHooksHelp)
 		}
 	}
+	if jsonOutput {
+		if trust {
+			return errors.New("codex-hooks --json is read-only; do not combine it with --trust")
+		}
+		return adminOnly("codex-hooks", func() error { return codexHooksJSON(os.Stdout) })
+	}
 	return adminOnly("codex-hooks", func() error { return codexHooks(os.Stdout, trust) })
+}
+
+func codexHooksJSON(out io.Writer) error {
+	bin := codexBinary()
+	if bin == "" {
+		return errors.New("no Codex runtime is available for hook inspection")
+	}
+	return codexHooksJSONFor(out, bin)
+}
+
+func codexHooksJSONFor(out io.Writer, bin string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	app, err := startAppServer(ctx, bin)
+	if err != nil {
+		return err
+	}
+	defer app.close()
+	hooks, err := app.dibsHooks()
+	if err != nil {
+		return err
+	}
+	report := plugins.CodexHookReport{Binary: bin, Hooks: []plugins.CodexHookApproval{}}
+	for _, h := range hooks {
+		report.Hooks = append(report.Hooks, plugins.CodexHookApproval{
+			Event: h.EventName, Trust: h.TrustStatus,
+			Enabled: h.Enabled, ShippedContent: plugins.CodexHookSourceShipped(h.SourcePath),
+		})
+	}
+	return json.NewEncoder(out).Encode(report)
 }
 
 func codexHooks(out io.Writer, trust bool) error {
@@ -134,16 +171,7 @@ func codexHooks(out io.Writer, trust bool) error {
 // codexBinary prefers the ChatGPT app's Codex when it exists: that is the one
 // the desktop app's sessions run, and the one on PATH is often an older shim.
 func codexBinary() string {
-	for _, path := range []string{
-		chatGPTCodex,
-		"/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
-		"/Applications/ChatGPT.app/Contents/Resources/codex",
-	} {
-		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
-			return path
-		}
-	}
-	return sibling.Find("codex")
+	return sibling.Codex()
 }
 
 // listHooks prints each hook with the two things that decide whether it

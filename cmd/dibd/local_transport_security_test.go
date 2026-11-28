@@ -156,6 +156,7 @@ func TestQDaemonChild(t *testing.T) {
 	if os.Getenv("DIBS_Q_DAEMON_CHILD") != "1" {
 		return
 	}
+	installCodexTrustFixture()
 	if version := os.Getenv("DIBS_TEST_DAEMON_BUILD"); version != "" {
 		build.Version = version
 	}
