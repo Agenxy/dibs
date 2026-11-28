@@ -39,6 +39,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Antigravity notices accepted during a running turn defer human contact.
+  Dibs rechecks the conversation and alerts only for mail still unread after
+  observed completion.
 - Antigravity contact alerts name a command awaiting approval when Dibs can
   confirm the conversation's waiting state. `diagnose_wake` reports the
   reason alongside the contact receipt.
